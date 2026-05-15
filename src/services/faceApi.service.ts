@@ -1,5 +1,9 @@
 import * as faceapi from "@vladmandic/face-api";
-import { DETECTION_MIN_CONFIDENCE, COMPARISON_MIN_CONFIDENCE } from "@/constants/thresholds";
+import {
+  DETECTION_MIN_CONFIDENCE,
+  COMPARISON_MIN_CONFIDENCE,
+  DESCRIPTOR_CONFIDENCE_GATE,
+} from "@/constants/thresholds";
 
 let modelsLoaded = false;
 
@@ -21,14 +25,48 @@ export async function detectFaceWithLandmarks(
     .withFaceLandmarks();
 }
 
+export interface FaceDescriptorResult {
+  descriptor: Float32Array;
+  confidence: number;
+}
+
+/**
+ * Extract a 128-d face descriptor from a still image.
+ * Returns null if no face is found or detection confidence is below DESCRIPTOR_CONFIDENCE_GATE.
+ */
 export async function getFaceDescriptor(
   source: HTMLImageElement | HTMLCanvasElement
-): Promise<Float32Array | null> {
+): Promise<FaceDescriptorResult | null> {
   const result = await faceapi
     .detectSingleFace(source, new faceapi.SsdMobilenetv1Options({ minConfidence: COMPARISON_MIN_CONFIDENCE }))
     .withFaceLandmarks()
     .withFaceDescriptor();
-  return result?.descriptor ?? null;
+
+  if (!result) return null;
+
+  const confidence = result.detection.score;
+  if (confidence < DESCRIPTOR_CONFIDENCE_GATE) {
+    console.log(
+      `[faceApi] descriptor rejected — confidence ${confidence.toFixed(3)} < gate ${DESCRIPTOR_CONFIDENCE_GATE}`
+    );
+    return null;
+  }
+
+  return { descriptor: result.descriptor, confidence };
+}
+
+/**
+ * Count how many faces are detected in a still image.
+ * Uses detectAllFaces (not detectSingleFace) — the only API that reveals multiple faces.
+ */
+export async function detectFaceCount(
+  source: HTMLImageElement | HTMLCanvasElement
+): Promise<number> {
+  const results = await faceapi.detectAllFaces(
+    source,
+    new faceapi.SsdMobilenetv1Options({ minConfidence: COMPARISON_MIN_CONFIDENCE })
+  );
+  return results.length;
 }
 
 export function euclideanDistance(a: Float32Array, b: Float32Array): number {

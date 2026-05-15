@@ -23,7 +23,6 @@ const App: React.FC = () => {
     <div style={{ width: "100%", maxWidth: 640 }}>
       <FaceCapture
         referenceImageSrc={REFERENCE_IMAGE_URL}
-        matchThreshold={0.6}
         modelPath="/models"
         onMatch={handleMatch}
       />
