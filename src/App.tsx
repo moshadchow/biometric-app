@@ -1,54 +1,54 @@
 import React, { useState } from "react";
+import Stepper from "@/components/Stepper";
+import type { StepConfig } from "@/components/Stepper";
 import FaceCapture from "@/components/FaceCapture";
-import { MatchResult } from "@/types";
+import NIDExtractor from "@/components/NIDExtractor";
 
-/**
- * Demo App — swap REFERENCE_IMAGE_URL for a real hosted image URL
- * or a base64 data URL containing a face to compare against.
- *
- * For local testing, add your reference image to public/reference.jpg
- * and set the URL to "/reference.jpg".
- */
 const REFERENCE_IMAGE_URL = "/reference.jpg";
 
 const App: React.FC = () => {
-  const [lastResult, setLastResult] = useState<{ result: MatchResult; score: number } | null>(null);
+  const [activeStep, setActiveStep] = useState(0);
 
-  const handleMatch = (result: MatchResult, score: number) => {
-    setLastResult({ result, score });
-    console.log(`[FaceCapture] result=${result}  distance=${score.toFixed(4)}`);
-  };
+  const steps: StepConfig[] = [
+    {
+      id: "face-verification",
+      label: "Face Verification",
+      component: (
+        <FaceCapture
+          referenceImageSrc={REFERENCE_IMAGE_URL}
+          modelPath="/models"
+          onMatch={(result, score) => {
+            console.log(`[App] onMatch — result: ${result}, score: ${score.toFixed(4)}`);
+          }}
+          onProceed={() => setActiveStep(1)}
+        />
+      ),
+    },
+    {
+      id: "ocr-extraction",
+      label: "OCR Extraction",
+      component: <NIDExtractor />,
+    },
+  ];
 
   return (
-    <div style={{ width: "100%", maxWidth: 640 }}>
-      <FaceCapture
-        referenceImageSrc={REFERENCE_IMAGE_URL}
-        modelPath="/models"
-        onMatch={handleMatch}
+    <div style={s.root}>
+      <Stepper
+        steps={steps}
+        activeIndex={activeStep}
+        onStepChange={setActiveStep}
       />
-
-      {lastResult && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: "10px 16px",
-            background: "#111",
-            border: "1px solid #222",
-            borderRadius: 8,
-            fontSize: 12,
-            color: "#666",
-            fontFamily: "monospace",
-          }}
-        >
-          Last result via onMatch callback:{" "}
-          <span style={{ color: lastResult.result === "Success" ? "#00e5a0" : "#ff6b6b" }}>
-            {lastResult.result}
-          </span>
-          {lastResult.score >= 0 && ` — distance: ${lastResult.score.toFixed(4)}`}
-        </div>
-      )}
     </div>
   );
+};
+
+const s: Record<string, React.CSSProperties> = {
+  root: {
+    width: "100%",
+    maxWidth: 900,
+    margin: "0 auto",
+    padding: "2rem 1rem",
+  },
 };
 
 export default App;

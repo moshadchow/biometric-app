@@ -16,6 +16,7 @@ const FaceCapture: React.FC<FaceCaptureProps> = ({
   referenceImageSrc,
   matchThreshold = MATCH_THRESHOLD,
   onMatch,
+  onProceed,
   modelPath = MODEL_PATH,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -175,6 +176,9 @@ const FaceCapture: React.FC<FaceCaptureProps> = ({
         )}
         {status === "loading" && (
           <button style={{ ...s.btn, opacity: 0.5 }} disabled>Loading models…</button>
+        )}
+        {status === "done" && matchResult?.result === "Success" && onProceed && (
+          <button style={s.btn} onClick={onProceed}>Proceed →</button>
         )}
         {(status === "done" || status === "error" || status === "captured") && (
           <button style={{ ...s.btn, ...s.btnSecondary }} onClick={handleReset}>Reset</button>

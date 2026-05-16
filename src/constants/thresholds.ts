@@ -8,7 +8,7 @@ export const MODEL_PATH: string =
 // Quality thresholds
 export const MIN_BRIGHTNESS = 60;
 export const MAX_BRIGHTNESS = 220;
-export const MIN_SHARPNESS = 20;
+export const MIN_SHARPNESS = 40;
 export const MIN_FACE_AREA = 0.05; // 5% of frame
 
 // Detection (live camera overlay loop)
