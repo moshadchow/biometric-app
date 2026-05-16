@@ -11,6 +11,9 @@ export function captureFrameAsBase64(
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Cannot get 2D context from canvas");
+  // Mirror horizontally to match the CSS-mirrored preview the user sees (transform: scaleX(-1))
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
   ctx.drawImage(video, 0, 0);
   return canvas.toDataURL("image/jpeg", CAPTURE_JPEG_QUALITY);
 }

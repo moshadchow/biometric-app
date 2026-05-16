@@ -27,5 +27,6 @@ export interface FaceCaptureProps {
   referenceImageSrc: string;
   matchThreshold?: number;
   onMatch?: (result: MatchResult, score: number) => void;
+  onProceed?: () => void;
   modelPath?: string;
 }
