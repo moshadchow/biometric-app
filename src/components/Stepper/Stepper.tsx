@@ -27,19 +27,56 @@ const Stepper: React.FC<StepperProps> = ({
   onStepChange,
   allowForwardNav = false,
 }) => {
+  const [isCompact, setIsCompact] = React.useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 920px)").matches : false
+  );
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const mediaQuery = window.matchMedia("(max-width: 920px)");
+    const handleChange = (event: MediaQueryListEvent) => setIsCompact(event.matches);
+
+    setIsCompact(mediaQuery.matches);
+    mediaQuery.addEventListener("change", handleChange);
+
+    return () => {
+      mediaQuery.removeEventListener("change", handleChange);
+    };
+  }, []);
+
   return (
-    <div style={s.root}>
-      {/* Left nav */}
-      <div style={s.nav}>
+    <div
+      style={{
+        ...s.root,
+        ...(isCompact ? s.rootCompact : null),
+      }}
+    >
+      <div
+        style={{
+          ...s.nav,
+          ...(isCompact ? s.navCompact : null),
+        }}
+      >
         {steps.map((step, index) => {
           const state = getStepState(index, activeIndex);
           const isClickable = state === "complete" || (state === "pending" && allowForwardNav);
 
           return (
-            <div key={step.id} style={s.stepRow}>
-              {/* Vertical connector line */}
-              <div style={s.connectorColumn}>
-                {index > 0 && <div style={s.connectorLine} />}
+            <div
+              key={step.id}
+              style={{
+                ...s.stepRow,
+                ...(isCompact ? s.stepRowCompact : null),
+              }}
+            >
+              <div
+                style={{
+                  ...s.connectorColumn,
+                  ...(isCompact ? s.connectorColumnCompact : null),
+                }}
+              >
+                {index > 0 && !isCompact && <div style={s.connectorLine} />}
                 <button
                   style={{
                     ...s.circle,
@@ -51,20 +88,20 @@ const Stepper: React.FC<StepperProps> = ({
                   onClick={() => isClickable && onStepChange(index)}
                   aria-label={`Step ${index + 1}: ${step.label}`}
                 >
-                  {state === "complete" ? "✓" : index + 1}
+                  {state === "complete" ? "OK" : index + 1}
                 </button>
               </div>
 
-              {/* Label */}
               <div
                 style={{
                   ...s.stepLabel,
+                  ...(isCompact ? s.stepLabelCompact : null),
                   color:
                     state === "active"
                       ? "#e0e0e0"
                       : state === "complete"
-                      ? "#00e5a0"
-                      : "#555",
+                        ? "#00e5a0"
+                        : "#555",
                   cursor: isClickable ? "pointer" : "default",
                   opacity: state === "pending" ? 0.6 : 1,
                 }}
@@ -78,7 +115,6 @@ const Stepper: React.FC<StepperProps> = ({
         })}
       </div>
 
-      {/* Content area */}
       <div style={s.content}>{steps[activeIndex]?.component}</div>
     </div>
   );
@@ -92,6 +128,10 @@ const s: Record<string, React.CSSProperties> = {
     width: "100%",
     fontFamily: "'DM Mono','Fira Code','Cascadia Code',monospace",
   },
+  rootCompact: {
+    flexDirection: "column",
+    gap: 16,
+  },
   nav: {
     width: 180,
     flexShrink: 0,
@@ -99,17 +139,35 @@ const s: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     paddingTop: 4,
   },
+  navCompact: {
+    width: "100%",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    paddingTop: 0,
+  },
   stepRow: {
     display: "flex",
     alignItems: "flex-start",
     gap: 10,
     marginBottom: 0,
   },
+  stepRowCompact: {
+    flex: "1 1 180px",
+    border: "1px solid #1f1f1f",
+    borderRadius: 12,
+    padding: 10,
+    background: "#0d0d0d",
+    alignItems: "center",
+  },
   connectorColumn: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     flexShrink: 0,
+  },
+  connectorColumnCompact: {
+    flexDirection: "row",
   },
   connectorLine: {
     width: 2,
@@ -124,7 +182,7 @@ const s: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 700,
     fontFamily: "inherit",
     border: "none",
@@ -156,6 +214,10 @@ const s: Record<string, React.CSSProperties> = {
     paddingTop: 4,
     paddingBottom: 20,
     userSelect: "none",
+  },
+  stepLabelCompact: {
+    paddingTop: 0,
+    paddingBottom: 0,
   },
   stepNumber: {
     fontSize: 9,

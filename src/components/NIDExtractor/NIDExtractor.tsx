@@ -1,5 +1,5 @@
 import React from "react";
-import type { OCRStatus } from "@/types";
+import type { NIDExtractorResult, OCRStatus } from "@/types";
 import { useNIDOCR } from "@/hooks/useNIDOCR";
 import FileUploadZone from "@/components/OCRExtractor/FileUploadZone";
 import OCRProgressBar from "@/components/OCRExtractor/OCRProgressBar";
@@ -9,7 +9,11 @@ import {
   NID_ACCEPTED_MIME_TYPES,
 } from "@/services/nidFileValidation.service";
 
-const NIDExtractor: React.FC = () => {
+interface NIDExtractorProps {
+  onComplete?: (result: NIDExtractorResult) => void;
+}
+
+const NIDExtractor: React.FC<NIDExtractorProps> = ({ onComplete }) => {
   const {
     status,
     workerReady,
@@ -31,9 +35,8 @@ const NIDExtractor: React.FC = () => {
 
   return (
     <div style={s.root}>
-      {/* Header */}
       <div style={s.header}>
-        <div style={s.logo}>◈</div>
+        <div style={s.logo}>NID</div>
         <div style={s.titleGroup}>
           <h1 style={s.title}>NID Card Extraction</h1>
           <span style={s.subtitle}>Bangladesh National ID Card</span>
@@ -41,7 +44,6 @@ const NIDExtractor: React.FC = () => {
         <NIDStatusBadge status={status} />
       </div>
 
-      {/* Upload zones */}
       {status !== "done" && (
         <div style={s.uploadRow}>
           <FileUploadZone
@@ -53,7 +55,7 @@ const NIDExtractor: React.FC = () => {
             label="Front Side *"
             acceptedExtensions={NID_ACCEPTED_EXTENSIONS}
             acceptedMimeTypes={NID_ACCEPTED_MIME_TYPES}
-            acceptedLabel="JPG, PNG · max 20 MB"
+            acceptedLabel="JPG, PNG - max 20 MB"
           />
           <FileUploadZone
             side="back"
@@ -64,35 +66,39 @@ const NIDExtractor: React.FC = () => {
             label="Back Side (optional)"
             acceptedExtensions={NID_ACCEPTED_EXTENSIONS}
             acceptedMimeTypes={NID_ACCEPTED_MIME_TYPES}
-            acceptedLabel="JPG, PNG · max 20 MB"
+            acceptedLabel="JPG, PNG - max 20 MB"
           />
         </div>
       )}
 
-      {/* Quality warning — non-blocking */}
       {qualityWarning && status !== "done" && (
         <div style={s.qualityWarn}>{qualityWarning}</div>
       )}
 
-      {/* Progress */}
       <OCRProgressBar progress={progress} status={status} />
 
-      {/* Error */}
       {(status === "error" || (errorMsg && status !== "processing")) && (
         <div style={s.error}>{errorMsg || "An unexpected error occurred."}</div>
       )}
 
-      {/* Results */}
       {status === "done" && result && (
-        <NIDResultView result={result} onReset={handleReset} />
+        <>
+          <NIDResultView result={result} onReset={handleReset} />
+          {onComplete && (
+            <div style={s.actions}>
+              <button style={s.btn} onClick={() => onComplete(result)}>
+                Proceed to Signature
+              </button>
+            </div>
+          )}
+        </>
       )}
 
-      {/* Actions */}
       {status !== "done" && (
         <div style={s.actions}>
           {!workerReady && status !== "processing" && (
             <button style={{ ...s.btn, opacity: 0.5 }} disabled>
-              Loading OCR engine…
+              Loading OCR engine...
             </button>
           )}
           {workerReady && (status === "idle" || status === "error") && (
@@ -110,7 +116,7 @@ const NIDExtractor: React.FC = () => {
           )}
           {status === "processing" && (
             <button style={{ ...s.btn, opacity: 0.5 }} disabled>
-              Processing…
+              Processing...
             </button>
           )}
           {status === "error" && (
@@ -124,33 +130,38 @@ const NIDExtractor: React.FC = () => {
   );
 };
 
-// ── Inline status badge ───────────────────────────────────────────────────────
-
 const nidStatusLabels: Record<OCRStatus, string> = {
-  idle:       "Ready",
-  uploading:  "Loading…",
-  processing: "Extracting…",
-  done:       "Complete",
-  error:      "Error",
+  idle: "Ready",
+  uploading: "Loading...",
+  processing: "Extracting...",
+  done: "Complete",
+  error: "Error",
 };
 
 const NIDStatusBadge: React.FC<{ status: OCRStatus }> = ({ status }) => {
   const colorMap: Record<OCRStatus, { bg: string; color: string }> = {
-    idle:       { bg: "#1a1a1a", color: "#888" },
-    uploading:  { bg: "#0d2a3d", color: "#38b6ff" },
+    idle: { bg: "#1a1a1a", color: "#888" },
+    uploading: { bg: "#0d2a3d", color: "#38b6ff" },
     processing: { bg: "#2a2a0d", color: "#ffe56b" },
-    done:       { bg: "#0f3d2a", color: "#00e5a0" },
-    error:      { bg: "#3d0f0f", color: "#ff9999" },
+    done: { bg: "#0f3d2a", color: "#00e5a0" },
+    error: { bg: "#3d0f0f", color: "#ff9999" },
   };
   const c = colorMap[status] ?? colorMap.idle;
   return (
-    <div style={{ background: c.bg, color: c.color, fontSize: 12, padding: "3px 12px", borderRadius: 20, fontWeight: 500 }}>
+    <div
+      style={{
+        background: c.bg,
+        color: c.color,
+        fontSize: 12,
+        padding: "3px 12px",
+        borderRadius: 20,
+        fontWeight: 500,
+      }}
+    >
       {nidStatusLabels[status]}
     </div>
   );
 };
-
-// ── Styles ────────────────────────────────────────────────────────────────────
 
 const s: Record<string, React.CSSProperties> = {
   root: {
@@ -172,9 +183,11 @@ const s: Record<string, React.CSSProperties> = {
     flexWrap: "wrap",
   },
   logo: {
-    fontSize: 22,
+    fontSize: 14,
     color: "#00e5a0",
     lineHeight: 1,
+    fontWeight: 700,
+    letterSpacing: "1px",
   },
   titleGroup: {
     display: "flex",
@@ -214,7 +227,7 @@ const s: Record<string, React.CSSProperties> = {
     display: "flex",
     gap: 10,
     flexWrap: "wrap",
-    marginTop: 4,
+    marginTop: 12,
   },
   btn: {
     background: "#00e5a0",
