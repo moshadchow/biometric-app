@@ -1,99 +1,49 @@
-# CLAUDE.md
+# Repository Guidelines
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Project Structure & Module Organization
 
-## Commands
+This repository is split into two main applications:
 
-```bash
-npm run dev        # Start dev server on http://localhost:5173
-npm run build      # TypeScript type check + Vite production bundle → dist/
-npm run preview    # Serve production build locally
-npm run test       # Run Vitest suite (15 tests)
-npm run lint       # ESLint
-```
+- `frontend/`: React + TypeScript customer/admin UI built with Vite.
+- `frontend/src/components/`: UI components for onboarding, admin dashboards, face capture, OCR, and signatures.
+- `frontend/src/api/`, `services/`, `hooks/`, `types/`, and `constants/`: API clients, business logic, shared hooks, and TypeScript contracts.
+- `frontend/src/__tests__/`: Vitest specs.
+- `frontend/public/`: static assets, including face-api model files.
+- `backend/`: FastAPI backend with API routers, CRUD logic, SQLModel models, Celery tasks, Alembic migrations, and tests.
+- `backend/tests/`: Python unit tests for onboarding, compliance, and risk assessment behavior.
 
-To run a single test file:
-```bash
-npx vitest run src/__tests__/imageConvert.test.ts
-```
+## Build, Test, and Development Commands
 
-## Architecture
+Run frontend commands from `frontend/`:
 
-Pure client-side React + TypeScript app (no backend). Two-step biometric workflow wrapped in a `Stepper`:
+- `npm run dev`: start the Vite dev server.
+- `npm run build`: run TypeScript checks and create the production bundle.
+- `npm run preview`: serve the production build locally.
+- `npm run test`: start Vitest in watch mode.
+- `npx vitest run --no-cache`: run frontend tests once.
+- `npx tsc --noEmit`: run TypeScript type checks only.
 
-1. **Face Verification** — webcam capture compared against a reference image using `@vladmandic/face-api` (WebGL, runs entirely in-browser)
-2. **NID OCR Extraction** — Bangladesh NID card front/back upload (JPG/PNG only, no PDF) processed by `tesseract.js` with NID-specific validation and field extraction
+Run backend commands from `backend/`:
 
-Navigation from step 1 → 2 only happens via `onProceed` (wired to "Proceed →" button visible only on a verified match). `onMatch` is logging-only.
+- `uvicorn main:app --reload --port 8000`: start the API server.
+- `.\venv\Scripts\python.exe -m unittest discover tests`: run backend tests.
+- `.\venv\Scripts\alembic.exe heads`: inspect Alembic migration heads.
+- `.\venv\Scripts\celery.exe -A worker.celery_app worker -I tasks --pool=solo --loglevel=info`: start Celery on Windows.
 
-### Key abstractions
+## Coding Style & Naming Conventions
 
-**Hooks** (`src/hooks/`) own all stateful logic:
-- `useCamera` — MediaStream webcam lifecycle
-- `useModels` — loads the three face-api models once at mount from `public/models/`
-- `useFaceDetection` — per-frame detection loop; emits `QualityReport` (brightness, sharpness, face area)
-- `useFaceMatch` — orchestrates the face comparison pipeline; returns `FaceMatchPayload`
-- `useOCR` — generic OCR state machine (supports PDF + image); used by `OCRExtractor` component
-- `useNIDOCR` — NID-specific OCR state machine; initialises Tesseract on mount with `workerReady` flag to prevent race conditions; front is required, back is optional
+Use React function components and TypeScript in the frontend. Prefer `@/` imports for internal frontend modules. Keep formatting consistent with existing files: 2-space indentation, double quotes, and `PascalCase` component names. Hooks use `useCamelCase`; service files use `*.service.ts`.
 
-**Services** (`src/services/`) are pure functions with no React dependencies:
-- `faceApi.service.ts` — face-api.js wrapper: model loading, detection, 128-d descriptor extraction, Euclidean distance
-- `imageQuality.service.ts` — brightness (luminance), sharpness (Laplacian variance), face area ratio
-- `imageConvert.service.ts` — canvas ↔ base64 ↔ byte array; **mirrors the canvas horizontally** to correct for CSS `scaleX(-1)` on the video element
-- `fileValidation.service.ts` — validates MIME type, file size, creates/revokes object URLs
-- `pdfRenderer.service.ts` — renders PDF pages to canvas using `pdfjs-dist` v5; uses `{ canvas, viewport }` (not `canvasContext`) in `page.render()`
-- `tesseract.service.ts` — singleton Tesseract worker (eng+ben); uses `PSM.AUTO_OSD` (not `SINGLE_BLOCK`) so layout analysis handles the NID card's photo-column + text-column structure; runs `enhanceForOCR` (greyscale + contrast stretch) on every image before recognition; upscales images below `OCR_MIN_IMAGE_HEIGHT`
-- `nidFileValidation.service.ts` — NID-specific file validation: JPG/PNG only (no PDF), ≤20 MB; exports `NID_ACCEPTED_MIME_TYPES`, `NID_ACCEPTED_EXTENSIONS`
-- `nidValidation.service.ts` — three exports:
-  - `detectNIDCard(text, side)` — weighted marker scoring against known Bengali/English NID phrases; threshold 50 (front) / 40 (back); rejects non-NID uploads
-  - `extractNIDFields(frontText, backText?)` — regex cascade for all 9 fields; see critical notes below
-  - `analyzeCardImageQuality(file)` — brightness (center 60% crop), sharpness (Laplacian), aspect ratio warning
+Backend code uses Python, FastAPI, SQLModel, and Alembic. Keep routers in `backend/api/`, shared logic in `backend/core/`, persistence helpers in `backend/crud/`, and database models in `backend/model/models.py`.
 
-**Components** (`src/components/`):
-- `Stepper` — 180px left nav + flex-1 content area; completed steps show ✓ and are clickable; forward nav disabled by default (`allowForwardNav=false`)
-- `FaceCapture` — orchestrating component for step 1; sub-components (`MatchResult`, `Base64Output`, `FaceOverlay`, `QualityIndicator`) are display-only
-- `OCRExtractor` — generic OCR component (kept for reference); sub-components (`FileUploadZone`, `OCRProgressBar`, `ExtractedTextPanel`, `OCRResultView`) are display-only and shared with NIDExtractor
-- `NIDExtractor` — orchestrating component for step 2; uses `useNIDOCR`; shows upload zones, progress, quality warnings, `NIDResultView`
-- `NIDResultView` — displays extracted NID fields in structured cards; includes Download .txt and Download JSON buttons
+## Testing Guidelines
 
-**Constants:**
-- `src/constants/thresholds.ts` — face matching tunable: match threshold (default 0.45), quality gates, confidence minimums, JPEG quality. `VITE_MATCH_THRESHOLD` and `VITE_MODEL_PATH` override at build time.
-- `src/constants/ocr.ts` — OCR tunable: languages (`eng+ben`), DPI (300), min image height (1200px), confidence warn threshold (40%).
+Frontend tests use Vitest and live under `frontend/src/__tests__/` with `*.test.ts` or `*.test.tsx` names. Backend tests use `unittest` and live under `backend/tests/`. Add focused tests when changing scoring, onboarding state, compliance decisions, OCR, face matching, or signature behavior.
 
-### Face matching safeguards
+## Commit & Pull Request Guidelines
 
-1. Exactly one face must be detected in both the captured and reference images (rejects 0 or 2+).
-2. Detection confidence must meet a minimum score (0.6) before extracting descriptors.
-3. Euclidean distance between the two 128-d descriptors is compared against the threshold (default 0.45).
+Commit history favors short, imperative messages such as `ocr-extractor+stepper-shell` or `add backend folder structure`. Keep commits focused. Pull requests should include a brief summary, commands run, linked issues when relevant, and screenshots or recordings for UI changes.
 
-### NID OCR pipeline
+## Security & Configuration Tips
 
-1. `useNIDOCR` initialises Tesseract on mount; `workerReady` state prevents the extract button from being clickable before the worker is ready (race condition fix).
-2. On file select, `analyzeCardImageQuality` runs a brightness/sharpness/aspect-ratio gate; low-quality images are rejected before OCR.
-3. `recognizeFile` in `tesseract.service.ts` converts to canvas, runs `enhanceForOCR` (greyscale + contrast stretch), then passes to Tesseract.
-4. After OCR, `detectNIDCard` scores the front text; score < 50 rejects the upload as not an NID card.
-5. `extractNIDFields` extracts up to 9 structured fields from the combined front+back text.
-
-### Critical: NID field extraction regex notes
-
-Tesseract OCR on NID card images produces predictable corruption patterns — these are handled in `extractNIDFields`:
-
-- **Bengali visarga `ঃ`** (U+0983) is inside `[ঀ-৿]` range, so separator patterns use `[;:।ঃ]` not `[;:।]`
-- **Line-boundary bleed**: capture classes use `[^\n\r]` not `[ঀ-৿\s.'-]` to stop at line end
-- **`মাতা`/`পিতা` label corruption**: Tesseract often OCRs the label or leading syllable as ASCII (e.g. `Gi চৌধুরী` instead of `মো: জামী চৌধুরী`). The `\S` anchor (not `[ঀ-৿]`) is used so the capture starts even when the first word is ASCII. `stripOCRNoise()` then strips leading words with zero Bengali characters.
-- **`Name` label corruption**: `Narne` / `Namne` are common rn→m OCR errors; pattern 0 covers these
-- **`Birth` corruption**: `Bisth` / `Bith` / `Birh` — pattern 5 uses `Bi\w{1,3}h?`
-- **DOB label corruption**: `Date of Birth.` (period instead of colon), `Date Ne` — pattern 6 uses a month-name anchor as a label-independent fallback; positional DOB uses loose `\bDate\b`
-- **District**: extracted as last Bengali token after the final comma/quote on address lines, before the `প্রদানকারী` landmark — NOT from danda `।` which also appears in the ownership-notice boilerplate at the top of the back side
-
-### Styling
-
-All styles are inline using `const s: Record<string, React.CSSProperties> = { ... }` — no CSS modules or utility classes. Dark theme throughout (#0a0a0a background, #00e5a0 accent, #38b6ff active).
-
-### Models
-
-Pre-trained model weights live in `public/models/` (binary files, not committed as source). Three are required at runtime: `ssd_mobilenetv1`, `face_landmark_68`, `face_recognition`.
-
-### Path alias
-
-`@/` maps to `src/` — use it for all intra-project imports. `"types": ["vite/client"]` in `tsconfig.json` enables `import.meta.env` and `?url` imports.
+Do not commit secrets, credentials, or generated binaries outside approved static assets. Keep environment-specific values in config files or environment variables. Be careful with auth, session recovery, onboarding eligibility, and risk scoring changes because they affect compliance-sensitive workflows.

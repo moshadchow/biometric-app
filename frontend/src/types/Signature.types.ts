@@ -97,3 +97,16 @@ export interface StoredSignatureRecord {
   auditLog: SignatureAuditEvent[];
   integrityHash: string;
 }
+
+export interface SignatureCompletionContext {
+  signatureMethod: SignatureMethod;
+  accountRisk: AccountRiskLevel;
+  selectedMethod: SignatureMethod;
+  signatureImage: SignatureImageAsset | null;
+  digitalSignature: DigitalSignatureArtifact | null;
+  pinAuthorization: PinAuthorizationArtifact | null;
+  auditLog: SignatureAuditEvent[];
+  signerName: string;
+  consentAccepted: boolean;
+  customerReference?: CustomerReference;
+}

@@ -11,9 +11,11 @@
   },
   "dependencies": {
     "@vladmandic/face-api": "^1.7.15",
+    "axios": "^1.16.1",
     "pdfjs-dist": "^5.7.284",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-router-dom": "^7.15.1",
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {

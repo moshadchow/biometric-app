@@ -284,7 +284,7 @@ export function analyzeCardImageQuality(file: File): Promise<ImageQualityResult>
         const canvas = document.createElement("canvas");
         canvas.width = w;
         canvas.height = h;
-        const ctx = canvas.getContext("2d")!;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
         ctx.drawImage(img, 0, 0, w, h);
 
         // Center 60% crop for brightness (avoids dark card borders)

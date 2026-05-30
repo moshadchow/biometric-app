@@ -1,5 +1,5 @@
 import React from "react";
-import type { NIDExtractorResult, OCRStatus } from "@/types";
+import type { NIDCompletionContext, NIDExtractorResult, OCRStatus } from "@/types";
 import { useNIDOCR } from "@/hooks/useNIDOCR";
 import FileUploadZone from "@/components/OCRExtractor/FileUploadZone";
 import OCRProgressBar from "@/components/OCRExtractor/OCRProgressBar";
@@ -10,7 +10,7 @@ import {
 } from "@/services/nidFileValidation.service";
 
 interface NIDExtractorProps {
-  onComplete?: (result: NIDExtractorResult) => void;
+  onComplete?: (result: NIDExtractorResult, context?: NIDCompletionContext) => void;
 }
 
 const NIDExtractor: React.FC<NIDExtractorProps> = ({ onComplete }) => {
@@ -86,7 +86,15 @@ const NIDExtractor: React.FC<NIDExtractorProps> = ({ onComplete }) => {
           <NIDResultView result={result} onReset={handleReset} />
           {onComplete && (
             <div style={s.actions}>
-              <button style={s.btn} onClick={() => onComplete(result)}>
+              <button
+                style={s.btn}
+                onClick={() =>
+                  onComplete(result, {
+                    frontFile: frontFile?.file ?? null,
+                    backFile: backFile?.file ?? null,
+                  })
+                }
+              >
                 Proceed to Signature
               </button>
             </div>

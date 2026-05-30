@@ -57,11 +57,11 @@ git checkout -b <branch_name>
 
 ## Step 6 — Research the codebase and regulatory requirements
 Read these files before writing the spec:
-- `CLAUDE.md` — roadmap, conventions, architecture
-- `app.py` — existing routes and onboarding flow
-- `database/db.py` — schema and persistence layer
-- `services/` — biometric, OCR, sanctions and NID integrations
-- `templates/` — onboarding UI and workflow templates
+- `frontend/src/` contains the React + TypeScript app.
+- `frontend/src/components/`, `hooks/`, `services/`, `types/`, and `constants/` hold the main UI and business logic.
+- `frontend/src/__tests__/` contains Vitest specs.
+- `frontend/public/` stores static assets such as reference images and face-api model files.
+- `backend/` contains the Python API, CRUD, schemas, and database code.
 - `.claude/specs/` — avoid duplicate implementation
 - `docs/eKYC_Requirments.pdf` — mandatory BFIU eKYC compliance rules
 
@@ -177,13 +177,12 @@ If none: state "No new dependencies".
 
 ## Rules for implementation
 Specific constraints Claude must follow. Always include:
-- No SQLAlchemy or ORMs
 - Parameterised queries only
 - Follow BFIU eKYC guidelines strictly
 - Preserve audit trails for all onboarding attempts
 - All onboarding flows must support failure recovery
 - Use CSS variables — never hardcode hex values
-- All templates extend `base.html`
+- All templates extend `index.html`
 - OTP/PIN verification must be rate limited
 - Biometric retry counts must follow regulatory limits
 - Support both assisted onboarding and self check-in where applicable

@@ -13,6 +13,8 @@ export interface StepperProps {
   activeIndex: number;
   onStepChange: (index: number) => void;
   allowForwardNav?: boolean;
+  completedStepIds?: string[];
+  isStepUnlocked?: (step: StepConfig, index: number) => boolean;
 }
 
 function getStepState(index: number, activeIndex: number): StepState {
@@ -26,6 +28,8 @@ const Stepper: React.FC<StepperProps> = ({
   activeIndex,
   onStepChange,
   allowForwardNav = false,
+  completedStepIds = [],
+  isStepUnlocked,
 }) => {
   const [isCompact, setIsCompact] = React.useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 920px)").matches : false
@@ -59,8 +63,11 @@ const Stepper: React.FC<StepperProps> = ({
         }}
       >
         {steps.map((step, index) => {
-          const state = getStepState(index, activeIndex);
-          const isClickable = state === "complete" || (state === "pending" && allowForwardNav);
+          const state = completedStepIds.includes(step.id)
+            ? "complete"
+            : getStepState(index, activeIndex);
+          const unlocked = isStepUnlocked?.(step, index) ?? false;
+          const isClickable = state === "complete" || unlocked || (state === "pending" && allowForwardNav);
 
           return (
             <div

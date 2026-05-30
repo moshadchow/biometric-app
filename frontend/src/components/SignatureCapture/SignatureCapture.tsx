@@ -5,7 +5,12 @@ import {
 } from "@/constants/signature";
 import { useSignatureCapture } from "@/hooks/useSignatureCapture";
 import { methodSatisfiesRisk } from "@/services/signatureValidation.service";
-import type { CustomerReference, NIDExtractorResult, StoredSignatureRecord } from "@/types";
+import type {
+  CustomerReference,
+  NIDExtractorResult,
+  SignatureCompletionContext,
+  StoredSignatureRecord,
+} from "@/types";
 import SignatureAuditLog from "./SignatureAuditLog";
 import SignatureCanvas from "./SignatureCanvas";
 import SignatureMethodSelector from "./SignatureMethodSelector";
@@ -13,7 +18,7 @@ import SignaturePreview from "./SignaturePreview";
 
 interface SignatureCaptureProps {
   nidResult?: NIDExtractorResult | null;
-  onComplete?: (record: StoredSignatureRecord) => void;
+  onComplete?: (record: StoredSignatureRecord, context?: SignatureCompletionContext) => void;
 }
 
 const SignatureCapture: React.FC<SignatureCaptureProps> = ({ nidResult, onComplete }) => {

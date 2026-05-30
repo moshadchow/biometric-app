@@ -1,8 +1,9 @@
 from celery import Celery
-import os
+
+from core.config import settings
 
 celery_app = Celery(
     "worker",
-    broker=os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0"),
-    backend=os.getenv("CELERY_RESULT_BACKEND", os.getenv("CELERY_BROKER_URL", "redis://redis:6379/1"))
+    broker=settings.CELERY_BROKER_URL,
+    backend=settings.CELERY_RESULT_BACKEND,
 )

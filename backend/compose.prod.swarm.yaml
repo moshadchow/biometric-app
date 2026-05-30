@@ -40,6 +40,9 @@ services:
       "
     ports:
       - "8000:8000"
+    environment:
+      UPLOAD_DIR: "storage/uploads"
+      MAX_UPLOAD_SIZE_BYTES: "20971520"
     volumes:
       - ./:/app
     networks:
@@ -90,6 +93,9 @@ services:
       export CELERY_RESULT_BACKEND=$$(cat /run/secrets/celery_result_backend) &&
       exec celery -A worker.celery_app worker -I tasks --loglevel=info
       "
+    environment:
+      UPLOAD_DIR: "storage/uploads"
+      MAX_UPLOAD_SIZE_BYTES: "20971520"
     volumes:
       - ./:/app
     networks:
@@ -121,6 +127,9 @@ services:
       export DATABASE_URL=$$(cat /run/secrets/database_url) &&
       exec alembic upgrade head
       "
+    environment:
+      UPLOAD_DIR: "storage/uploads"
+      MAX_UPLOAD_SIZE_BYTES: "20971520"
     networks:
       - app-network
     secrets:

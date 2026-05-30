@@ -46,9 +46,6 @@ export async function getFaceDescriptor(
 
   const confidence = result.detection.score;
   if (confidence < DESCRIPTOR_CONFIDENCE_GATE) {
-    console.log(
-      `[faceApi] descriptor rejected — confidence ${confidence.toFixed(3)} < gate ${DESCRIPTOR_CONFIDENCE_GATE}`
-    );
     return null;
   }
 

@@ -23,10 +23,17 @@ export interface FaceMatchPayload {
   error?: string;
 }
 
+export interface FaceMatchCompletionContext {
+  capturedBase64: string;
+  referenceImageSrc: string;
+  matchThreshold: number;
+  quality?: QualityReport | null;
+}
+
 export interface FaceCaptureProps {
   referenceImageSrc: string;
   matchThreshold?: number;
-  onMatch?: (result: MatchResult, score: number) => void;
+  onMatch?: (result: MatchResult, score: number, context?: FaceMatchCompletionContext) => void;
   onProceed?: () => void;
   modelPath?: string;
 }
