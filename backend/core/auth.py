@@ -5,13 +5,13 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session
-from decouple import config
 from .db import get_session
+from .config import settings
 from crud.crud_user import get_user_by_username
 
 
-SECRET_KEY = config("SECRET_KEY")
-ALGORITHM = config("ALGORITHM")
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 oauth2_schema = OAuth2PasswordBearer(tokenUrl="/api/v1/users/token")
@@ -61,6 +61,9 @@ def role_checker(roles: list[str]):
 
 def is_admin():
     return role_checker(["admin"])
+
+def is_compliance_admin():
+    return role_checker(["admin", "compliance_admin", "super_admin", "risk_officer"])
 
 def is_customer():
     return role_checker(["customer"])

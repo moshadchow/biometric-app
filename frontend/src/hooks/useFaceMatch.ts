@@ -12,6 +12,8 @@ interface UseFaceMatchOptions {
   threshold?: number;
 }
 
+const DEBUG_FACE_MATCH = Boolean(import.meta.env.DEV) && import.meta.env.VITE_DEBUG_FACE_MATCH === "true";
+
 export function useFaceMatch({ threshold = MATCH_THRESHOLD }: UseFaceMatchOptions = {}) {
   const compare = useCallback(
     async (capturedSrc: string, referenceSrc: string): Promise<FaceMatchPayload> => {
@@ -30,14 +32,14 @@ export function useFaceMatch({ threshold = MATCH_THRESHOLD }: UseFaceMatchOption
           detectFaceCount(referenceImg),
         ]);
 
-        console.log(`[useFaceMatch] face counts — captured: ${capturedCount}, reference: ${referenceCount}`);
+        if (DEBUG_FACE_MATCH) {
+          console.log(`[useFaceMatch] face counts — captured: ${capturedCount}, reference: ${referenceCount}`);
+        }
 
         if (capturedCount === 0) {
-          console.log("[useFaceMatch] REJECT — no face detected in captured image");
           return { result: "Fail", distance: -1, error: "No face detected in captured image." };
         }
         if (capturedCount > 1) {
-          console.log(`[useFaceMatch] REJECT — ${capturedCount} faces in captured image`);
           return {
             result: "Fail",
             distance: -1,
@@ -45,11 +47,9 @@ export function useFaceMatch({ threshold = MATCH_THRESHOLD }: UseFaceMatchOption
           };
         }
         if (referenceCount === 0) {
-          console.log("[useFaceMatch] REJECT — no face detected in reference image");
           return { result: "Fail", distance: -1, error: "No face detected in reference image." };
         }
         if (referenceCount > 1) {
-          console.log(`[useFaceMatch] REJECT — ${referenceCount} faces in reference image`);
           return {
             result: "Fail",
             distance: -1,
@@ -64,7 +64,6 @@ export function useFaceMatch({ threshold = MATCH_THRESHOLD }: UseFaceMatchOption
         ]);
 
         if (!capturedResult) {
-          console.log("[useFaceMatch] REJECT — captured descriptor failed confidence gate");
           return {
             result: "Fail",
             distance: -1,
@@ -72,7 +71,6 @@ export function useFaceMatch({ threshold = MATCH_THRESHOLD }: UseFaceMatchOption
           };
         }
         if (!referenceResult) {
-          console.log("[useFaceMatch] REJECT — reference descriptor failed confidence gate");
           return {
             result: "Fail",
             distance: -1,
@@ -80,21 +78,24 @@ export function useFaceMatch({ threshold = MATCH_THRESHOLD }: UseFaceMatchOption
           };
         }
 
-        console.log(
-          `[useFaceMatch] confidence — captured: ${capturedResult.confidence.toFixed(3)}, reference: ${referenceResult.confidence.toFixed(3)}`
-        );
+        if (DEBUG_FACE_MATCH) {
+          console.log(
+            `[useFaceMatch] confidence — captured: ${capturedResult.confidence.toFixed(3)}, reference: ${referenceResult.confidence.toFixed(3)}`
+          );
+        }
 
         // ── Step 4: Compute distance and apply threshold ─────────────────────
         const distance = euclideanDistance(capturedResult.descriptor, referenceResult.descriptor);
         const result: MatchResult = distance <= threshold ? "Success" : "Fail";
 
-        console.log(
-          `[useFaceMatch] distance: ${distance.toFixed(4)} | threshold: ${threshold} | result: ${result}`
-        );
+        if (DEBUG_FACE_MATCH) {
+          console.log(
+            `[useFaceMatch] distance: ${distance.toFixed(4)} | threshold: ${threshold} | result: ${result}`
+          );
+        }
 
         return { result, distance };
       } catch (err) {
-        console.log(`[useFaceMatch] ERROR — ${String(err)}`);
         return { result: "Fail", distance: -1, error: String(err) };
       }
     },

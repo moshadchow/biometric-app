@@ -26,13 +26,14 @@ import type {
   SignatureImageAsset,
   SignatureMethod,
   SignatureStatus,
+  SignatureCompletionContext,
   StoredSignatureRecord,
   VerificationMethod,
 } from "@/types";
 
 interface UseSignatureCaptureOptions {
   customerReference?: CustomerReference;
-  onComplete?: (record: StoredSignatureRecord) => void;
+  onComplete?: (record: StoredSignatureRecord, context?: SignatureCompletionContext) => void;
 }
 
 export interface UseSignatureCaptureReturn {
@@ -350,7 +351,18 @@ export function useSignatureCapture(
       setStatus("saved");
       setSuccessMsg(`Signature preserved successfully. Reference: ${record.id}`);
       appendAuditEvent(createAuditEvent("submission_status", `Signature record stored as ${record.id}.`, "success"));
-      options.onComplete?.(record);
+      options.onComplete?.(record, {
+        signatureMethod: selectedMethod,
+        accountRisk,
+        selectedMethod,
+        signatureImage,
+        digitalSignature,
+        pinAuthorization,
+        auditLog: [submissionCompleted, submissionStarted, ...auditLog],
+        signerName: signerName.trim(),
+        consentAccepted,
+        customerReference: options.customerReference,
+      });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to securely preserve the signature record.";

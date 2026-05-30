@@ -48,3 +48,8 @@ export interface NIDExtractorResult {
   frontDetection: NIDDetectionResult;
   backDetection?: NIDDetectionResult;
 }
+
+export interface NIDCompletionContext {
+  frontFile?: File | null;
+  backFile?: File | null;
+}

@@ -86,10 +86,15 @@ const FaceCapture: React.FC<FaceCaptureProps> = ({
     }
     if (payload.result !== null) {
       setMatchResult({ result: payload.result, distance: payload.distance });
-      onMatch?.(payload.result, payload.distance);
+      onMatch?.(payload.result, payload.distance, {
+        capturedBase64,
+        referenceImageSrc,
+        matchThreshold,
+        quality,
+      });
     }
     setStatus("done");
-  }, [capturedBase64, compare, referenceImageSrc, onMatch]);
+  }, [capturedBase64, compare, matchThreshold, onMatch, quality, referenceImageSrc]);
 
   const handleReset = useCallback(() => {
     stopCamera();

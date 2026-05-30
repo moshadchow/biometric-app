@@ -4,7 +4,7 @@ annotated-types==0.7.0
 anyio==4.9.0
 async-timeout==5.0.1
 asyncpg==0.30.0
-bcrypt==4.3.0
+bcrypt==4.0.1
 billiard==4.2.2
 celery==5.5.3
 click==8.2.1

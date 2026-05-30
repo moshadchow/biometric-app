@@ -9,6 +9,30 @@ type TesseractWorker = Tesseract.Worker;
 let worker: TesseractWorker | null = null;
 let currentProgressCallback: ((evt: OCRProgressEvent) => void) | null = null;
 let currentSide: DocumentSide = "front";
+const IGNORED_TESSERACT_WARNINGS = [
+  "Parameter not found: segsearch_max_futile_classifications",
+  "Parameter not found: classify_misfit_junk_penalty",
+];
+let tesseractWarningFilterInstalled = false;
+
+function shouldIgnoreTesseractWarning(args: unknown[]): boolean {
+  const text = args.map((arg) => String(arg)).join(" ");
+  return IGNORED_TESSERACT_WARNINGS.some((warning) => text.includes(warning));
+}
+
+function installTesseractWarningFilter(): void {
+  if (tesseractWarningFilterInstalled || typeof console === "undefined") {
+    return;
+  }
+  const originalWarn = console.warn.bind(console);
+  console.warn = (...args: unknown[]) => {
+    if (shouldIgnoreTesseractWarning(args)) {
+      return;
+    }
+    originalWarn(...args);
+  };
+  tesseractWarningFilterInstalled = true;
+}
 
 export function setProgressCallback(
   cb: ((evt: OCRProgressEvent) => void) | null,
@@ -20,8 +44,13 @@ export function setProgressCallback(
 
 export async function initOCRWorker(): Promise<void> {
   if (worker !== null) return;
+  installTesseractWarningFilter();
   worker = await createWorker(OCR_LANGUAGES, 1, {
     logger: (m: Tesseract.LoggerMessage) => {
+      const message = "message" in m && typeof m.message === "string" ? m.message : "";
+      if (message && IGNORED_TESSERACT_WARNINGS.some((warning) => message.includes(warning))) {
+        return;
+      }
       if (!currentProgressCallback) return;
       if (m.status === "recognizing text" || m.status === "loading language traineddata" || m.status === "initializing tesseract") {
         currentProgressCallback({
@@ -101,7 +130,7 @@ export async function recognizeFile(
         : 1;
       canvas.width = Math.round(img.naturalWidth * scale);
       canvas.height = Math.round(img.naturalHeight * scale);
-      const ctx = canvas.getContext("2d")!;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
       if (scale > 1) {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";

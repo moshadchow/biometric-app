@@ -13,7 +13,7 @@ export function analyzeQuality(
   canvas: HTMLCanvasElement,
   faceBox: { x: number; y: number; width: number; height: number }
 ): QualityReport {
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) {
     return { brightness: 0, sharpness: 0, faceArea: 0, valid: false, message: "Canvas context unavailable" };
   }
