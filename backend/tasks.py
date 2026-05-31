@@ -429,7 +429,7 @@ def finalize_screening_decision(risk_payload: dict[str, Any], screening_request_
         case = session.exec(
             select(ComplianceCase).where(ComplianceCase.screening_request_id == screening_request_id)
         ).first()
-        customer_assessment = latest_assessment_sync(session, screening.session_id, "final")
+        customer_assessment = latest_assessment_sync(session, screening.session_id)
         if customer_assessment is not None:
             ensure_review_case_sync(session, screening, customer_assessment)
             case = session.exec(

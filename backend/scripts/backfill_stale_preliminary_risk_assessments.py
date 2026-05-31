@@ -51,7 +51,6 @@ def _profile_mismatch_session_ids(session: Session, session_id: int | None) -> l
         assessment = session.exec(
             select(CustomerRiskAssessment)
             .where(CustomerRiskAssessment.session_id == profile.session_id)
-            .where(CustomerRiskAssessment.assessment_type == "preliminary")
             .order_by(CustomerRiskAssessment.calculated_at.desc(), CustomerRiskAssessment.id.desc())
         ).first()
         if assessment is None:

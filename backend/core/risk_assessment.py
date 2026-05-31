@@ -644,12 +644,12 @@ def _sync_persist(
     existing = session.exec(
         select(CustomerRiskAssessment)
         .where(CustomerRiskAssessment.session_id == session_id)
-        .where(CustomerRiskAssessment.assessment_type == payload["assessment_type"])
         .order_by(desc(CustomerRiskAssessment.created_at))
     ).first()
     previous_score = existing.total_score if existing else None
     if existing is None:
         existing = CustomerRiskAssessment(session_id=session_id, rule_version=payload["rule_version"], assessment_type=payload["assessment_type"])
+    existing.assessment_type = payload["assessment_type"]
     existing.screening_request_id = payload.get("screening_request_id")
     existing.status = payload["status"]
     existing.total_score = payload["total_score"]
@@ -698,13 +698,13 @@ async def _async_persist(
     result = await db.exec(
         select(CustomerRiskAssessment)
         .where(CustomerRiskAssessment.session_id == session_id)
-        .where(CustomerRiskAssessment.assessment_type == payload["assessment_type"])
         .order_by(desc(CustomerRiskAssessment.created_at))
     )
     existing = result.first()
     previous_score = existing.total_score if existing else None
     if existing is None:
         existing = CustomerRiskAssessment(session_id=session_id, rule_version=payload["rule_version"], assessment_type=payload["assessment_type"])
+    existing.assessment_type = payload["assessment_type"]
     existing.screening_request_id = payload.get("screening_request_id")
     existing.status = payload["status"]
     existing.total_score = payload["total_score"]
@@ -890,7 +890,6 @@ def stale_preliminary_assessment_session_ids_sync(session: Session) -> list[int]
     statement = (
         select(CustomerRiskAssessment.session_id)
         .join(CustomerIdentityProfile, CustomerIdentityProfile.session_id == CustomerRiskAssessment.session_id)
-        .where(CustomerRiskAssessment.assessment_type == "preliminary")
         .where(CustomerIdentityProfile.status == "IDENTITY_FORM_COMPLETED")
         .where(CustomerIdentityProfile.submitted_at.is_not(None))
         .where(
@@ -913,15 +912,13 @@ def stale_preliminary_assessment_session_ids_sync(session: Session) -> list[int]
 
 def latest_assessment_sync(session: Session, session_id: int, assessment_type: str | None = None) -> CustomerRiskAssessment | None:
     statement = select(CustomerRiskAssessment).where(CustomerRiskAssessment.session_id == session_id)
-    if assessment_type:
-        statement = statement.where(CustomerRiskAssessment.assessment_type == assessment_type)
+    del assessment_type
     return session.exec(statement.order_by(desc(CustomerRiskAssessment.calculated_at))).first()
 
 
 async def latest_assessment_async(db: AsyncSession, session_id: int, assessment_type: str | None = None) -> CustomerRiskAssessment | None:
     statement = select(CustomerRiskAssessment).where(CustomerRiskAssessment.session_id == session_id)
-    if assessment_type:
-        statement = statement.where(CustomerRiskAssessment.assessment_type == assessment_type)
+    del assessment_type
     result = await db.exec(statement.order_by(desc(CustomerRiskAssessment.calculated_at)))
     return result.first()
 

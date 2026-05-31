@@ -7,6 +7,7 @@ from core.risk_assessment import (
     _business_scores,
     _profession_scores,
     _sync_active_rule_version,
+    _sync_persist,
     calculate_assessment_payload,
     classify_score,
     form_type_for_category,
@@ -559,6 +560,64 @@ class RiskAssessmentEngineTest(unittest.TestCase):
             stale_ids = stale_preliminary_assessment_session_ids_sync(session)
 
         self.assertEqual(stale_ids, [1])
+
+    def test_sync_persist_reuses_same_session_assessment_row_across_preliminary_and_final(self) -> None:
+        engine = create_engine("sqlite:///:memory:")
+        SQLModel.metadata.create_all(engine)
+
+        with Session(engine) as session:
+            payload = {
+                "assessment_type": "preliminary",
+                "screening_request_id": None,
+                "status": "RISK_COMPLETED",
+                "total_score": 3,
+                "risk_category": "LOW",
+                "rule_version": "v1",
+                "edd_required": False,
+                "edd_status": None,
+                "edd_reasons": [],
+                "rules_snapshot": {"stage": "preliminary"},
+                "factors": [],
+            }
+            assessment = _sync_persist(
+                session,
+                session_id=77,
+                actor_user_id=None,
+                payload=payload,
+            )
+            session.commit()
+
+            assessment_id = assessment.id
+            payload["assessment_type"] = "final"
+            payload["screening_request_id"] = 12
+            payload["status"] = "EDD_REQUIRED"
+            payload["total_score"] = 15
+            payload["risk_category"] = "HIGH"
+            payload["edd_required"] = True
+            payload["edd_status"] = "EDD_REQUIRED"
+            payload["edd_reasons"] = ["risk_category_high"]
+            payload["rules_snapshot"] = {"stage": "final"}
+
+            updated = _sync_persist(
+                session,
+                session_id=77,
+                actor_user_id=None,
+                payload=payload,
+            )
+            session.commit()
+
+            rows = list(
+                session.exec(
+                    select(CustomerRiskAssessment).where(CustomerRiskAssessment.session_id == 77)
+                ).all()
+            )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(updated.id, assessment_id)
+        self.assertEqual(rows[0].assessment_type, "final")
+        self.assertEqual(rows[0].screening_request_id, 12)
+        self.assertEqual(rows[0].total_score, 15)
+        self.assertEqual(rows[0].risk_category, "HIGH")
 
 
 if __name__ == "__main__":

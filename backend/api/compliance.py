@@ -321,7 +321,7 @@ async def _resolve_case(
     result = await db.exec(select(OnboardingSession).where(OnboardingSession.id == screening.session_id))
     session_row = result.one_or_none()
     if session_row is not None:
-        customer_risk = await latest_assessment_async(db, session_row.id, "final")
+        customer_risk = await latest_assessment_async(db, session_row.id)
         if customer_risk is not None and customer_risk.edd_required:
             customer_risk.edd_status = "EDD_APPROVED" if target_decision == "APPROVED" else "EDD_REJECTED"
             customer_risk.status = customer_risk.edd_status
