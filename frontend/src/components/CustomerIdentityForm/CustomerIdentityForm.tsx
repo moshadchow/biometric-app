@@ -7,10 +7,13 @@ import {
   submitIdentityForm,
   type OnboardingSessionSummary,
 } from "@/api/OnboardingApi";
+import { getRiskAssessmentOptions } from "@/api/ComplianceApi";
 import type {
   CustomerAddressPayload,
   CustomerIdentityFormPayload,
   CustomerIdentityFormResponse,
+  RiskAssessmentOptions,
+  RiskOption,
 } from "@/types";
 
 interface CustomerIdentityFormProps {
@@ -38,6 +41,10 @@ const emptyPayload: CustomerIdentityFormPayload = {
   date_of_birth: "",
   gender: "",
   profession: "",
+  product_type: "",
+  business_category: "",
+  residency_status: "",
+  onboarding_channel: "",
   mobile_number: "",
   monthly_income: "",
   nationality: "",
@@ -76,6 +83,10 @@ function responseToPayload(response: CustomerIdentityFormResponse): CustomerIden
     date_of_birth: profile.date_of_birth ?? "",
     gender: profile.gender ?? "",
     profession: profile.profession ?? "",
+    product_type: profile.product_type ?? "",
+    business_category: profile.business_category ?? "",
+    residency_status: profile.residency_status ?? "",
+    onboarding_channel: profile.onboarding_channel ?? "",
     mobile_number: profile.mobile_number ?? "",
     monthly_income: profile.monthly_income ?? "",
     nationality: profile.nationality ?? "",
@@ -115,12 +126,21 @@ function validate(payload: CustomerIdentityFormPayload, formType: string): strin
     ["Mobile number", payload.mobile_number],
     ["Present address", payload.present_address.address_line],
     ["Permanent address", payload.permanent_address.address_line],
+    ["Profession", payload.profession],
+    ["Product type", payload.product_type],
+    ["Business category", payload.business_category],
+    ["Residency status", payload.residency_status],
+    ["Source of funds", payload.source_of_funds],
+    ["Expected annual transaction volume", payload.expected_transaction_range],
+    ["Onboarding channel", payload.onboarding_channel],
   ];
   if (formType === "regular") {
+    required.push(["Monthly income", payload.monthly_income]);
+  }
+  if (payload.beneficial_owner_different) {
     required.push(
-      ["Source of funds", payload.source_of_funds],
-      ["Nationality", payload.nationality],
-      ["Monthly income", payload.monthly_income]
+      ["Beneficial owner name", payload.beneficial_owner_name],
+      ["Beneficial owner identification number", payload.beneficial_owner_identification_number]
     );
   }
   for (const [label, value] of required) {
@@ -131,6 +151,44 @@ function validate(payload: CustomerIdentityFormPayload, formType: string): strin
   return missing;
 }
 
+function missingRiskOptionLists(options: RiskAssessmentOptions | null): string[] {
+  if (!options) return ["risk configuration"];
+  const missing: string[] = [];
+  if (options.source_of_funds.length === 0) missing.push("Source of Funds");
+  if (options.expected_transaction_ranges.length === 0) missing.push("Expected Annual Transaction Volume");
+  if (options.onboarding_channels.length === 0) missing.push("Onboarding Channel");
+  return missing;
+}
+
+function describeSubmitError(error: unknown): string {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    const message = typeof (detail as { message?: unknown }).message === "string"
+      ? String((detail as { message?: unknown }).message)
+      : null;
+    const missingFields = Array.isArray((detail as { missing_fields?: unknown }).missing_fields)
+      ? ((detail as { missing_fields?: string[] }).missing_fields ?? [])
+      : [];
+    const effectiveFormType = typeof (detail as { effective_form_type?: unknown }).effective_form_type === "string"
+      ? String((detail as { effective_form_type?: string }).effective_form_type)
+      : null;
+    const effectiveRiskCategory = typeof (detail as { effective_risk_category?: unknown }).effective_risk_category === "string"
+      ? String((detail as { effective_risk_category?: string }).effective_risk_category)
+      : null;
+
+    if (effectiveFormType === "regular" && missingFields.length > 0) {
+      return `Risk increased to ${effectiveRiskCategory ?? "MEDIUM"}, so Regular e-KYC is required. Complete: ${missingFields.join(", ")}.`;
+    }
+    if (message) {
+      return message;
+    }
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return String(error);
+}
+
 const CustomerIdentityForm: React.FC<CustomerIdentityFormProps> = ({ sessionId, onSubmitted }) => {
   const [payload, setPayload] = React.useState<CustomerIdentityFormPayload>(emptyPayload);
   const [formResponse, setFormResponse] = React.useState<CustomerIdentityFormResponse | null>(null);
@@ -139,6 +197,7 @@ const CustomerIdentityForm: React.FC<CustomerIdentityFormProps> = ({ sessionId, 
   const [error, setError] = React.useState("");
   const [dirty, setDirty] = React.useState(false);
   const [nomineePhoto, setNomineePhoto] = React.useState<File | null>(null);
+  const [riskOptions, setRiskOptions] = React.useState<RiskAssessmentOptions | null>(null);
 
   React.useEffect(() => {
     if (!sessionId) return undefined;
@@ -146,9 +205,13 @@ const CustomerIdentityForm: React.FC<CustomerIdentityFormProps> = ({ sessionId, 
     setStatus("loading");
     void (async () => {
       try {
-        const response = await getIdentityForm(sessionId);
+        const [response, options] = await Promise.all([
+          getIdentityForm(sessionId),
+          getRiskAssessmentOptions(),
+        ]);
         if (cancelled) return;
         setFormResponse(response);
+        setRiskOptions(options);
         setPayload(responseToPayload(response));
         setDirty(false);
         setError("");
@@ -184,6 +247,17 @@ const CustomerIdentityForm: React.FC<CustomerIdentityFormProps> = ({ sessionId, 
 
   const formType = formResponse?.profile.form_type ?? "simplified";
   const riskCategory = formResponse?.profile.risk_category ?? "LOW";
+  const options = riskOptions ?? {
+    professions: [],
+    business_categories: [],
+    product_types: [],
+    nationalities: [],
+    residency_statuses: [],
+    source_of_funds: [],
+    expected_transaction_ranges: [],
+    beneficial_ownership: [],
+    onboarding_channels: [],
+  };
 
   const setField = (key: keyof CustomerIdentityFormPayload, value: string | boolean) => {
     setPayload((current) => ({ ...current, [key]: value }));
@@ -234,6 +308,11 @@ const CustomerIdentityForm: React.FC<CustomerIdentityFormProps> = ({ sessionId, 
 
   const handleSubmit = async () => {
     if (!sessionId) return;
+    const missingOptions = missingRiskOptionLists(riskOptions);
+    if (missingOptions.length > 0) {
+      setError(`Risk configuration is missing options for: ${missingOptions.join(", ")}.`);
+      return;
+    }
     const missing = validate(payload, formType);
     if (missing.length > 0) {
       setError(`Complete required fields: ${missing.join(", ")}.`);
@@ -249,7 +328,7 @@ const CustomerIdentityForm: React.FC<CustomerIdentityFormProps> = ({ sessionId, 
       setStatus("saved");
       onSubmitted?.(response.session as OnboardingSessionSummary);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : String(submitError));
+      setError(describeSubmitError(submitError));
       setStatus("error");
     }
   };
@@ -294,20 +373,20 @@ const CustomerIdentityForm: React.FC<CustomerIdentityFormProps> = ({ sessionId, 
       <section style={s.panel}>
         <div style={s.sectionTitle}>{formType === "regular" ? "Financial and Contact Information" : "Additional Information"}</div>
         <div style={s.grid}>
-          <Input label="Profession" value={payload.profession} onChange={(value) => setField("profession", value)} />
+          <SelectInput label="Profession" value={payload.profession} options={options.professions} onChange={(value) => setField("profession", value)} required />
+          <SelectInput label="Product Type" value={payload.product_type} options={options.product_types} onChange={(value) => setField("product_type", value)} required />
+          <SelectInput label="Business Category" value={payload.business_category} options={options.business_categories} onChange={(value) => setField("business_category", value)} required />
+          <SelectInput label="Residency Status" value={payload.residency_status} options={options.residency_statuses} onChange={(value) => setField("residency_status", value)} required />
+          <SelectInput label="Source of Funds" value={payload.source_of_funds} options={options.source_of_funds} onChange={(value) => setField("source_of_funds", value)} required />
+          <SelectInput label="Expected Annual Transaction Volume" value={payload.expected_transaction_range} options={options.expected_transaction_ranges} onChange={(value) => setField("expected_transaction_range", value)} required />
+          <SelectInput label="Onboarding Channel" value={payload.onboarding_channel} options={options.onboarding_channels} onChange={(value) => setField("onboarding_channel", value)} required />
           {formType === "regular" ? (
             <>
               <Input label="Monthly Income" value={payload.monthly_income} onChange={(value) => setField("monthly_income", value)} required />
-              <Input label="Nationality" value={payload.nationality} onChange={(value) => setField("nationality", value)} required />
-              <Input label="Source of Funds" value={payload.source_of_funds} onChange={(value) => setField("source_of_funds", value)} required />
               <Input label="TIN" value={payload.tin} onChange={(value) => setField("tin", value)} />
-              <Input label="Expected Transaction Pattern" value={payload.expected_transaction_pattern} onChange={(value) => setField("expected_transaction_pattern", value)} />
               <Input label="Additional Documents Obtained" value={payload.additional_documents_obtained} onChange={(value) => setField("additional_documents_obtained", value)} />
             </>
-          ) : (
-            <Input label="Expected Transaction Range" value={payload.expected_transaction_range} onChange={(value) => setField("expected_transaction_range", value)} />
-          )}
-          <Input label="Existing Customer Review" value={payload.existing_customer_review} onChange={(value) => setField("existing_customer_review", value)} />
+          ) : null}
         </div>
       </section>
 
@@ -423,6 +502,31 @@ const Input: React.FC<{
     <input value={value ?? ""} onChange={(event) => onChange(event.target.value)} style={s.input} />
   </label>
 );
+
+const SelectInput: React.FC<{
+  label: string;
+  value?: string | null;
+  options: RiskOption[];
+  required?: boolean;
+  onChange: (value: string) => void;
+}> = ({ label, value, options, required, onChange }) => {
+  const currentValue = value ?? "";
+  const hasCurrent = !currentValue || options.some((option) => option.value === currentValue);
+  return (
+    <label style={s.field}>
+      <span style={s.label}>{label}{required ? " *" : ""}</span>
+      <select value={currentValue} onChange={(event) => onChange(event.target.value)} style={s.input}>
+        <option value="">Select</option>
+        {!hasCurrent && <option value={currentValue}>{currentValue}</option>}
+        {options.map((option) => (
+          <option key={`${option.source}:${option.value}`} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+};
 
 const AddressPanel: React.FC<{
   title: string;

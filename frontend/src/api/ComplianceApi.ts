@@ -12,6 +12,7 @@ import type {
   RiskProfessionCategoryPayload,
   RiskFactorRulesResponse,
   RiskFactorRule,
+  RiskAssessmentOptions,
   RiskProductCategory,
   RiskRuleVersion,
   RiskThresholdBand,
@@ -20,9 +21,7 @@ import type {
   ScreeningStatus,
 } from "@/types";
 export {
-  allowCustomerReOnboarding,
   listAdminCustomerOnboarding,
-  revokeCustomerReOnboarding,
 } from "@/api/OnboardingApi";
 export type { AdminCustomerOnboarding } from "@/api/OnboardingApi";
 
@@ -108,6 +107,13 @@ export async function recalculateRiskAssessment(sessionId: number): Promise<Cust
     {},
     { headers: authHeaders() }
   );
+  return response.data;
+}
+
+export async function getRiskAssessmentOptions(): Promise<RiskAssessmentOptions> {
+  const response = await api.get<RiskAssessmentOptions>("/api/v1/risk-assessment/options", {
+    headers: authHeaders(),
+  });
   return response.data;
 }
 

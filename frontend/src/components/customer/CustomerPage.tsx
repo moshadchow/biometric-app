@@ -48,6 +48,7 @@ function stepIndexForResumeStep(step: string): number {
 function restoredNidResult(session: OnboardingSessionSummary): NIDExtractorResult | null {
   const ocr = session.ocr_extraction;
   if (!ocr) return null;
+  const fields = ocr.fields as NIDExtractorResult["fields"];
   return {
     front: {
       side: "front",
@@ -67,7 +68,8 @@ function restoredNidResult(session: OnboardingSessionSummary): NIDExtractorResul
       : undefined,
     mergedText: ocr.merged_text,
     completedAt: ocr.completed_at,
-    fields: ocr.fields as NIDExtractorResult["fields"],
+    fields,
+    fieldMeta: fields.__fieldMeta,
     frontDetection: ocr.front_detection as unknown as NIDExtractorResult["frontDetection"],
     backDetection: ocr.back_detection as unknown as NIDExtractorResult["backDetection"],
   };
@@ -684,6 +686,9 @@ function formatComplianceMessage(
   }
   if (summary.screening_status === "SCREENING_IN_PROGRESS") {
     return "Background sanctions, PEP, media, watchlist, exit-list, and IP checks are running. Activation stays blocked until the final decision.";
+  }
+  if (summary.screening_status === "SCREENING_FAILED") {
+    return "Compliance screening could not be started. Retry the screening request to continue onboarding.";
   }
   if (summary.screening_status === "REVIEW_REQUIRED") {
     return "A compliance analyst review is required before activation can proceed.";

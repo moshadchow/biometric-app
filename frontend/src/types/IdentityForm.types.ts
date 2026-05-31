@@ -29,6 +29,10 @@ export interface CustomerIdentityFormPayload {
   date_of_birth?: string | null;
   gender?: string | null;
   profession?: string | null;
+  product_type?: string | null;
+  business_category?: string | null;
+  residency_status?: string | null;
+  onboarding_channel?: string | null;
   mobile_number?: string | null;
   monthly_income?: string | null;
   nationality?: string | null;

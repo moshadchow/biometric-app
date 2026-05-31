@@ -41,7 +41,7 @@ const CustomerDashboard: React.FC = () => {
           <p style={s.kicker}>Customer dashboard</p>
           <h1 style={s.title}>Account onboarding status</h1>
           <p style={s.subtitle}>
-            Your onboarding record is preserved. Re-onboarding requires administrator approval.
+            Your completed onboarding record is preserved for review and audit.
           </p>
         </div>
         <button type="button" onClick={handleSignOut} style={s.signOutButton}>

@@ -1,14 +1,12 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  allowCustomerReOnboarding,
   approveComplianceCase,
   getComplianceCase,
   listAdminCustomerOnboarding,
   listComplianceCases,
   recalculateRiskAssessment,
   rejectComplianceCase,
-  revokeCustomerReOnboarding,
 } from "@/api/ComplianceApi";
 import type { ComplianceCase, ComplianceCaseDetail } from "@/types";
 import type { AdminCustomerOnboarding } from "@/api/OnboardingApi";
@@ -27,7 +25,6 @@ function AdminDashboard() {
   const [actionError, setActionError] = React.useState("");
   const [actionLoading, setActionLoading] = React.useState(false);
   const [customers, setCustomers] = React.useState<AdminCustomerOnboarding[]>([]);
-  const [customerActionLoading, setCustomerActionLoading] = React.useState<number | null>(null);
   const [adminTab, setAdminTab] = React.useState<AdminTab>("cases");
 
   const loadCases = React.useCallback(async () => {
@@ -125,30 +122,6 @@ function AdminDashboard() {
     }
   }, [loadCases, selectedCase]);
 
-  const handleReOnboarding = React.useCallback(
-    async (customer: AdminCustomerOnboarding, action: "allow" | "revoke") => {
-      setCustomerActionLoading(customer.user_id);
-      setActionError("");
-      try {
-        const payload = {
-          reason: action === "allow" ? "Administrator approved customer re-onboarding." : "Administrator revoked re-onboarding approval.",
-          notes: `Submitted from admin dashboard for ${customer.username}.`,
-        };
-        if (action === "allow") {
-          await allowCustomerReOnboarding(customer.user_id, payload);
-        } else {
-          await revokeCustomerReOnboarding(customer.user_id, payload);
-        }
-        await loadCustomers();
-      } catch (error) {
-        setActionError(error instanceof Error ? error.message : String(error));
-      } finally {
-        setCustomerActionLoading(null);
-      }
-    },
-    [loadCustomers]
-  );
-
   const handleSignOut = React.useCallback(() => {
     sessionStorage.removeItem("jwt_token");
     navigate("/login", { replace: true });
@@ -199,31 +172,14 @@ function AdminDashboard() {
           <div style={s.customerGrid}>
             {customers.map((customer) => {
               const completed = customer.latest_session?.workflow_state === "ONBOARDING_COMPLETED";
+              const status = completed ? "Permanently locked" : "In progress or not started";
               return (
                 <div key={customer.user_id} style={s.customerCard}>
                   <div>
                     <div style={s.resultTitle}>{customer.username}</div>
                     <div style={s.resultMeta}>
-                      {customer.latest_session?.workflow_state ?? "NO_SESSION"} | {customer.re_onboarding_allowed ? "Re-onboarding allowed" : "Locked"}
+                      {customer.latest_session?.workflow_state ?? "NO_SESSION"} | {status}
                     </div>
-                  </div>
-                  <div style={s.actionRow}>
-                    <button
-                      type="button"
-                      style={s.secondaryButton}
-                      disabled={!completed || customer.re_onboarding_allowed || customerActionLoading === customer.user_id}
-                      onClick={() => void handleReOnboarding(customer, "allow")}
-                    >
-                      Allow Re-Onboarding
-                    </button>
-                    <button
-                      type="button"
-                      style={s.rejectButton}
-                      disabled={!customer.re_onboarding_allowed || customerActionLoading === customer.user_id}
-                      onClick={() => void handleReOnboarding(customer, "revoke")}
-                    >
-                      Revoke
-                    </button>
                   </div>
                 </div>
               );

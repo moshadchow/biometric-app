@@ -53,8 +53,13 @@ export interface RiskAssessment {
 export interface CustomerRiskFactorScore {
   id: number;
   factor_name: string;
+  factor_code?: string | null;
   factor_score: number;
   source: string;
+  source_table?: string | null;
+  selected_value?: string | null;
+  rule_id?: number | null;
+  match_status: string;
   source_value: Record<string, unknown>;
   rule_version: string;
   created_at: string;
@@ -193,6 +198,25 @@ export interface RiskFactorRule {
 export interface RiskFactorRulesResponse {
   definitions: RiskFactorDefinition[];
   rules: RiskFactorRule[];
+}
+
+export interface RiskOption {
+  value: string;
+  label: string;
+  source: string;
+  score?: number | null;
+}
+
+export interface RiskAssessmentOptions {
+  professions: RiskOption[];
+  business_categories: RiskOption[];
+  product_types: RiskOption[];
+  nationalities: RiskOption[];
+  residency_statuses: RiskOption[];
+  source_of_funds: RiskOption[];
+  expected_transaction_ranges: RiskOption[];
+  beneficial_ownership: RiskOption[];
+  onboarding_channels: RiskOption[];
 }
 
 export interface RiskThresholdBand {

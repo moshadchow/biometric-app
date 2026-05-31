@@ -8,7 +8,7 @@ export const OCR_ACCEPTED_MIME_TYPES = [
 
 export const OCR_ACCEPTED_EXTENSIONS = ".jpg,.jpeg,.png,.pdf";
 
-export const OCR_LANGUAGES = "eng+ben";
+export const OCR_LANGUAGES = "ben+eng";
 
 export const PDF_RENDER_SCALE = 2.0;
 

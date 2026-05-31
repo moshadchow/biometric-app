@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from model.models import ProductOrder as Order
 from core.db import get_session
-from tasks import process_order
+# from tasks import process_order
 from schemas import OrderCreate, OrderResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select

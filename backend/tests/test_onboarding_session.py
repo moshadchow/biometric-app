@@ -208,7 +208,7 @@ class OnboardingSessionConcurrencyTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(store.sessions), 1)
 
-    async def test_completed_customer_with_admin_approval_gets_new_session_once(self) -> None:
+    async def test_completed_customer_cannot_start_new_session(self) -> None:
         store = SharedOnboardingStore(
             sessions=[
                 OnboardingSession(
@@ -223,14 +223,11 @@ class OnboardingSessionConcurrencyTest(unittest.IsolatedAsyncioTestCase):
             next_id=2,
         )
         session = FakeAsyncSession(store, user_id=1)
-        session.user.re_onboarding_allowed = True
-        session.user.re_onboarding_reason = "Admin approved retest."
 
-        result = await crud_onboarding.get_or_create_active_session(user_id=1, session=session)
+        with self.assertRaises(PermissionError):
+            await crud_onboarding.get_or_create_active_session(user_id=1, session=session)
 
-        self.assertEqual(result.id, 2)
-        self.assertEqual(len(store.sessions), 2)
-        self.assertFalse(session.user.re_onboarding_allowed)
+        self.assertEqual(len(store.sessions), 1)
 
 
 class OnboardingSessionEndpointTest(unittest.IsolatedAsyncioTestCase):

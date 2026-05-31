@@ -21,10 +21,6 @@ class UserCreate(UserBase):
 # Properties to return from the API (output), excluding the password
 class UserPublic(UserBase):
     id: int
-    re_onboarding_allowed: bool = False
-    re_onboarding_allowed_at: Optional[datetime] = None
-    re_onboarding_allowed_by: Optional[int] = None
-    re_onboarding_reason: Optional[str] = None
 
 # Shared properties for a category
 class CategoryBase(SQLModel):
@@ -130,6 +126,7 @@ class OnboardingOCRPayload(SQLModel):
     mergedText: str
     completedAt: str
     fields: Dict[str, Any]
+    fieldMeta: Optional[Dict[str, Any]] = None
     frontDetection: Dict[str, Any]
     backDetection: Optional[Dict[str, Any]] = None
 
@@ -176,6 +173,10 @@ class CustomerIdentityFormPayload(BaseModel):
     date_of_birth: Optional[str] = None
     gender: Optional[str] = None
     profession: Optional[str] = None
+    product_type: Optional[str] = None
+    business_category: Optional[str] = None
+    residency_status: Optional[str] = None
+    onboarding_channel: Optional[str] = None
     mobile_number: Optional[str] = None
     monthly_income: Optional[str] = None
     nationality: Optional[str] = None
@@ -235,6 +236,10 @@ class CustomerIdentityProfilePublic(BaseModel):
     date_of_birth: Optional[str] = None
     gender: Optional[str] = None
     profession: Optional[str] = None
+    product_type: Optional[str] = None
+    business_category: Optional[str] = None
+    residency_status: Optional[str] = None
+    onboarding_channel: Optional[str] = None
     mobile_number: Optional[str] = None
     monthly_income: Optional[str] = None
     nationality: Optional[str] = None
@@ -382,24 +387,14 @@ class OnboardingEligibilityResponse(BaseModel):
     latest_session: Optional[OnboardingSessionSummary] = None
     can_start_onboarding: bool
     can_resume_onboarding: bool
-    re_onboarding_allowed: bool
     destination: str
     message: str
-
-
-class ReOnboardingApprovalPayload(BaseModel):
-    reason: str
-    notes: Optional[str] = None
 
 
 class AdminCustomerOnboardingPublic(BaseModel):
     user_id: int
     username: str
     role: str
-    re_onboarding_allowed: bool
-    re_onboarding_allowed_at: Optional[datetime] = None
-    re_onboarding_allowed_by: Optional[int] = None
-    re_onboarding_reason: Optional[str] = None
     latest_session: Optional[OnboardingSessionSummary] = None
 
 
@@ -462,8 +457,13 @@ class RiskAssessmentPublic(BaseModel):
 class CustomerRiskFactorScorePublic(BaseModel):
     id: int
     factor_name: str
+    factor_code: Optional[str] = None
     factor_score: int
     source: str
+    source_table: Optional[str] = None
+    selected_value: Optional[str] = None
+    rule_id: Optional[int] = None
+    match_status: str = "matched"
     source_value: Dict[str, Any]
     rule_version: str
     created_at: datetime
@@ -659,6 +659,25 @@ class RiskFactorRulePayload(BaseModel):
 class RiskFactorRulesResponse(BaseModel):
     definitions: List[RiskFactorDefinitionPublic] = []
     rules: List[RiskFactorRulePublic] = []
+
+
+class RiskOptionPublic(BaseModel):
+    value: str
+    label: str
+    source: str
+    score: Optional[int] = None
+
+
+class RiskAssessmentOptionsResponse(BaseModel):
+    professions: List[RiskOptionPublic] = []
+    business_categories: List[RiskOptionPublic] = []
+    product_types: List[RiskOptionPublic] = []
+    nationalities: List[RiskOptionPublic] = []
+    residency_statuses: List[RiskOptionPublic] = []
+    source_of_funds: List[RiskOptionPublic] = []
+    expected_transaction_ranges: List[RiskOptionPublic] = []
+    beneficial_ownership: List[RiskOptionPublic] = []
+    onboarding_channels: List[RiskOptionPublic] = []
 
 
 class RiskThresholdBandPublic(BaseModel):

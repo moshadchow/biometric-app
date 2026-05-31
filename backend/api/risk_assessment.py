@@ -34,6 +34,7 @@ from schemas import (
     CustomerRiskAssessmentPublic,
     CustomerRiskFactorScorePublic,
     RiskAssessmentCalculateRequest,
+    RiskAssessmentOptionsResponse,
     RiskBusinessCategoryCreate,
     RiskBusinessCategoryListResponse,
     RiskBusinessCategoryPublic,
@@ -43,6 +44,7 @@ from schemas import (
     RiskFactorRulePayload,
     RiskFactorRulePublic,
     RiskFactorRulesResponse,
+    RiskOptionPublic,
     RiskProductCategoryPayload,
     RiskProductCategoryPublic,
     RiskProfessionCategoryCreate,
@@ -97,15 +99,21 @@ def _profession_public(row: RiskProfessionCategory, usage_count: int) -> RiskPro
 
 
 async def _usage_counts(db: AsyncSession, source: str, id_key: str, code_key: str, name_key: str) -> dict[str, int]:
-    result = await db.exec(select(CustomerRiskFactorScore).where(CustomerRiskFactorScore.source == source))
+    result = await db.exec(
+        select(CustomerRiskFactorScore).where(
+            or_(CustomerRiskFactorScore.source == source, CustomerRiskFactorScore.source_table == source)
+        )
+    )
     counts: dict[str, int] = {}
     for factor in result.all():
         source_value = factor.source_value or {}
-        for key in (id_key, code_key, name_key):
+        for key in (id_key, code_key, name_key, "matched_id", "matched_code", "matched_name"):
             value = source_value.get(key)
             if value is not None:
                 counts[str(value)] = counts.get(str(value), 0) + 1
                 break
+        if factor.selected_value is not None:
+            counts[factor.selected_value] = counts.get(factor.selected_value, 0) + 1
     return counts
 
 
@@ -250,11 +258,116 @@ def _profession_snapshot(row: RiskProfessionCategory) -> dict:
     }
 
 
+def _risk_option(value: str, label: str, source: str, score: int | None = None) -> RiskOptionPublic:
+    return RiskOptionPublic(value=value, label=label, source=source, score=score)
+
+
+def _rule_option(row: RiskFactorRule, source: str) -> RiskOptionPublic:
+    if row.rule_type == "boolean":
+        value = "true" if row.boolean_value else "false"
+    else:
+        value = row.match_value or row.rule_code
+    return _risk_option(
+        value=value,
+        label=row.description or row.match_value or row.rule_code,
+        source=source,
+        score=row.risk_score,
+    )
+
+
+def _is_selectable_rule(row: RiskFactorRule) -> bool:
+    return row.rule_type in {"normalized_match", "contains", "range"} and row.rule_type != "fallback"
+
+
 async def _get_business_category(category_id: int, db: AsyncSession) -> RiskBusinessCategory:
     row = await db.get(RiskBusinessCategory, category_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk business category not found.")
     return row
+
+
+@router.get("/options", response_model=RiskAssessmentOptionsResponse)
+async def get_risk_assessment_options(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    del current_user
+    version = await _active_rule_version(db)
+    professions = list(
+        (
+            await db.exec(
+                select(RiskProfessionCategory)
+                .where(RiskProfessionCategory.is_active == True)
+                .order_by(RiskProfessionCategory.profession_name.asc())
+            )
+        ).all()
+    )
+    businesses = list(
+        (
+            await db.exec(
+                select(RiskBusinessCategory)
+                .where(RiskBusinessCategory.is_active == True)
+                .order_by(RiskBusinessCategory.category_name.asc())
+            )
+        ).all()
+    )
+    products = list(
+        (
+            await db.exec(
+                select(RiskProductCategory)
+                .where(RiskProductCategory.rule_version_id == version.id)
+                .where(RiskProductCategory.is_active == True)
+                .order_by(RiskProductCategory.product_name.asc())
+            )
+        ).all()
+    )
+    definitions = list(
+        (
+            await db.exec(
+                select(RiskFactorDefinition)
+                .where(RiskFactorDefinition.is_active == True)
+                .order_by(RiskFactorDefinition.display_order.asc())
+            )
+        ).all()
+    )
+    definition_by_id = {definition.id: definition for definition in definitions}
+    rules = list(
+        (
+            await db.exec(
+                select(RiskFactorRule)
+                .where(RiskFactorRule.rule_version_id == version.id)
+                .where(RiskFactorRule.is_active == True)
+                .order_by(RiskFactorRule.id.asc())
+            )
+        ).all()
+    )
+    rules_by_source: dict[str, list[RiskOptionPublic]] = {}
+    for rule in rules:
+        definition = definition_by_id.get(rule.factor_definition_id)
+        if definition is None or not _is_selectable_rule(rule):
+            continue
+        rules_by_source.setdefault(definition.source_key, []).append(_rule_option(rule, "risk_factor_rules"))
+
+    return RiskAssessmentOptionsResponse(
+        professions=[
+            _risk_option(row.profession_code, row.profession_name, "risk_profession_categories", row.risk_score)
+            for row in professions
+        ],
+        business_categories=[
+            _risk_option(row.category_code, row.category_name, "risk_business_categories", row.risk_score)
+            for row in businesses
+        ],
+        product_types=[
+            _risk_option(row.product_code, row.product_name, "risk_product_categories", row.risk_score)
+            for row in products
+        ],
+        nationalities=[],
+        residency_statuses=rules_by_source.get("residency_status", []),
+        source_of_funds=rules_by_source.get("source_of_funds", []),
+        expected_transaction_ranges=rules_by_source.get("expected_transaction_range", []),
+        beneficial_ownership=rules_by_source.get("beneficial_owner_different", []),
+        onboarding_channels=rules_by_source.get("onboarding_channel", []),
+    )
 
 
 async def _get_profession_category(category_id: int, db: AsyncSession) -> RiskProfessionCategory:

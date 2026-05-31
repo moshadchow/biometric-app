@@ -14,10 +14,6 @@ class User(SQLModel, table=True):
     username: str = Field(index=True, unique=True)
     password: str
     role: str = "customer"
-    re_onboarding_allowed: bool = Field(default=False, index=True)
-    re_onboarding_allowed_at: Optional[datetime] = None
-    re_onboarding_allowed_by: Optional[int] = Field(default=None, foreign_key="user.id")
-    re_onboarding_reason: Optional[str] = None
 
     # This relationship is named "reviews"
     reviews: List["Review"] = Relationship(back_populates="user")
@@ -147,6 +143,10 @@ class CustomerIdentityProfile(SQLModel, table=True):
     date_of_birth: Optional[str] = None
     gender: Optional[str] = None
     profession: Optional[str] = None
+    product_type: Optional[str] = None
+    business_category: Optional[str] = None
+    residency_status: Optional[str] = None
+    onboarding_channel: Optional[str] = None
     mobile_number: Optional[str] = None
     monthly_income: Optional[str] = None
     nationality: Optional[str] = None
@@ -444,8 +444,13 @@ class CustomerRiskFactorScore(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     assessment_id: int = Field(foreign_key="customer_risk_assessments.id", index=True)
     factor_name: str = Field(index=True)
+    factor_code: Optional[str] = Field(default=None, index=True)
     factor_score: int
     source: str = Field(index=True)
+    source_table: Optional[str] = Field(default=None, index=True)
+    selected_value: Optional[str] = Field(default=None, index=True)
+    rule_id: Optional[int] = Field(default=None, index=True)
+    match_status: str = Field(default="matched", index=True)
     source_value: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     rule_version: str = Field(index=True)
     created_at: datetime = Field(default_factory=utc_now)

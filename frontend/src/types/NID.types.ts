@@ -37,6 +37,19 @@ export interface NIDFields {
   addressRaw?: string;
   district?: string;
   upazila?: string;
+  __fieldMeta?: NIDFieldMetaMap;
+}
+
+export interface NIDFieldMeta {
+  source: string;
+  labelVerified: boolean;
+  matchedText?: string;
+}
+
+export interface NIDFieldMetaMap {
+  fatherName?: NIDFieldMeta;
+  motherName?: NIDFieldMeta;
+  district?: NIDFieldMeta;
 }
 
 export interface NIDExtractorResult {
@@ -45,6 +58,7 @@ export interface NIDExtractorResult {
   mergedText: string;
   completedAt: string;
   fields: NIDFields;
+  fieldMeta?: NIDFieldMetaMap;
   frontDetection: NIDDetectionResult;
   backDetection?: NIDDetectionResult;
 }

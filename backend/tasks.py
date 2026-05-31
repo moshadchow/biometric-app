@@ -31,7 +31,6 @@ from worker import celery_app
 
 
 engine = create_engine(settings.DATABASE_SYNC_URL, echo=True)
-STAGES = ["Packaging", "Shipping", "Delivered"]
 
 
 def utc_now() -> datetime:
@@ -151,23 +150,6 @@ def _load_subject(session: Session, screening_request: ScreeningRequest) -> dict
         },
         "session_status": onboarding_session.status if onboarding_session else None,
     }
-
-
-@celery_app.task
-def process_order(order_id: int):
-    with Session(engine) as session:
-        order = session.exec(select(Order).where(Order.id == order_id)).first()
-        if not order:
-            return {"error": "Order not found"}
-
-        for stage in STAGES:
-            time.sleep(10)
-            order.status = stage
-            session.add(order)
-            session.commit()
-            session.refresh(order)
-
-    return {"order_id": order.id, "final_status": order.status}
 
 
 @celery_app.task(bind=True)

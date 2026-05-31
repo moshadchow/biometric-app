@@ -22,9 +22,22 @@ from core.onboarding_state import (
     transition_session_async,
 )
 from core.task_queue import enqueue_task
+from core.risk_assessment import (
+    _async_active_rule_version,
+    preview_preliminary_assessment_async,
+    refresh_preliminary_assessment_async,
+)
 from crud import crud_compliance
 from crud import crud_onboarding
-from model.models import AuditLog, OnboardingSession, User
+from model.models import (
+    OnboardingSession,
+    RiskBusinessCategory,
+    RiskFactorDefinition,
+    RiskFactorRule,
+    RiskProductCategory,
+    RiskProfessionCategory,
+    User,
+)
 from schemas import (
     AdminCustomerOnboardingListResponse,
     AdminCustomerOnboardingPublic,
@@ -46,7 +59,6 @@ from schemas import (
     OnboardingSignatureCapturePublic,
     OnboardingSignaturePayload,
     OnboardingStepResponse,
-    ReOnboardingApprovalPayload,
 )
 from tasks import start_screening_workflow
 
@@ -231,6 +243,10 @@ def _public_identity_profile(profile) -> CustomerIdentityProfilePublic:
         date_of_birth=profile.date_of_birth,
         gender=profile.gender,
         profession=profile.profession,
+        product_type=profile.product_type,
+        business_category=profile.business_category,
+        residency_status=profile.residency_status,
+        onboarding_channel=profile.onboarding_channel,
         mobile_number=profile.mobile_number,
         monthly_income=profile.monthly_income,
         nationality=profile.nationality,
@@ -332,10 +348,10 @@ def build_session_summary(session_row) -> OnboardingSessionSummary:
     )
 
 
-def _destination_for_eligibility(latest_session, user: User) -> str:
+def _destination_for_eligibility(latest_session) -> str:
     if latest_session is None:
         return "onboarding"
-    if latest_session.workflow_state == "ONBOARDING_COMPLETED" and not user.re_onboarding_allowed:
+    if latest_session.workflow_state == "ONBOARDING_COMPLETED":
         return "customer_dashboard"
     if latest_session.workflow_state == "ONBOARDING_REJECTED":
         return "rejected"
@@ -347,20 +363,18 @@ def build_eligibility_response(
     user: User,
     latest_session,
 ) -> OnboardingEligibilityResponse:
-    destination = _destination_for_eligibility(latest_session, user)
+    destination = _destination_for_eligibility(latest_session)
     latest_summary = build_session_summary(latest_session) if latest_session else None
     completed = bool(latest_session and latest_session.workflow_state == "ONBOARDING_COMPLETED")
     rejected = bool(latest_session and latest_session.workflow_state == "ONBOARDING_REJECTED")
-    can_start = not completed or user.re_onboarding_allowed
+    can_start = not completed
     can_resume = bool(
         latest_session
         and latest_session.status not in TERMINAL_SESSION_STATUSES
         and latest_session.workflow_state != "ONBOARDING_COMPLETED"
     )
-    if completed and not user.re_onboarding_allowed:
-        message = "Onboarding is already completed. Admin approval is required before re-onboarding."
-    elif user.re_onboarding_allowed:
-        message = "Re-onboarding has been approved by an administrator."
+    if completed:
+        message = "Onboarding is already completed and permanently locked."
     elif rejected:
         message = "Onboarding was rejected."
     elif can_resume:
@@ -373,7 +387,6 @@ def build_eligibility_response(
         latest_session=latest_summary,
         can_start_onboarding=can_start,
         can_resume_onboarding=can_resume,
-        re_onboarding_allowed=user.re_onboarding_allowed,
         destination=destination,
         message=message,
     )
@@ -395,7 +408,7 @@ async def ensure_session(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
                     "code": "ONBOARDING_ALREADY_COMPLETED",
-                    "message": "Onboarding is already completed. Admin approval is required before re-onboarding.",
+                    "message": "Onboarding is already completed and cannot be restarted.",
                 },
             ) from exc
         raise
@@ -467,10 +480,6 @@ async def _admin_customer_public(user: User, db: AsyncSession) -> AdminCustomerO
         user_id=user.id,
         username=user.username,
         role=user.role,
-        re_onboarding_allowed=user.re_onboarding_allowed,
-        re_onboarding_allowed_at=to_naive_utc(user.re_onboarding_allowed_at),
-        re_onboarding_allowed_by=user.re_onboarding_allowed_by,
-        re_onboarding_reason=user.re_onboarding_reason,
         latest_session=build_session_summary(latest) if latest else None,
     )
 
@@ -489,83 +498,6 @@ async def list_customer_onboarding_statuses(
     )
 
 
-@router.post(
-    "/admin/customers/{user_id}/re-onboarding/allow",
-    response_model=AdminCustomerOnboardingPublic,
-    dependencies=[Depends(is_admin())],
-)
-async def allow_re_onboarding(
-    user_id: int,
-    payload: ReOnboardingApprovalPayload,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session),
-):
-    result = await db.exec(select(User).where(User.id == user_id, User.role != "admin"))
-    customer = result.one_or_none()
-    if customer is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found.")
-    latest = await crud_onboarding.get_latest_session_for_user(user_id=user_id, session=db)
-    if latest is None or latest.workflow_state != "ONBOARDING_COMPLETED":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Re-onboarding can only be approved for completed customers.",
-        )
-    customer.re_onboarding_allowed = True
-    customer.re_onboarding_allowed_at = utc_now()
-    customer.re_onboarding_allowed_by = current_user.id
-    customer.re_onboarding_reason = payload.reason
-    db.add(customer)
-    db.add(
-        AuditLog(
-            session_id=latest.id,
-            actor_user_id=current_user.id,
-            event_type="re_onboarding_approved",
-            event_status="success",
-            message="Administrator approved customer re-onboarding.",
-            payload={"customer_user_id": user_id, "reason": payload.reason, "notes": payload.notes},
-        )
-    )
-    await db.commit()
-    await db.refresh(customer)
-    return await _admin_customer_public(customer, db)
-
-
-@router.post(
-    "/admin/customers/{user_id}/re-onboarding/revoke",
-    response_model=AdminCustomerOnboardingPublic,
-    dependencies=[Depends(is_admin())],
-)
-async def revoke_re_onboarding(
-    user_id: int,
-    payload: ReOnboardingApprovalPayload,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session),
-):
-    result = await db.exec(select(User).where(User.id == user_id, User.role != "admin"))
-    customer = result.one_or_none()
-    if customer is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found.")
-    latest = await crud_onboarding.get_latest_session_for_user(user_id=user_id, session=db)
-    customer.re_onboarding_allowed = False
-    customer.re_onboarding_allowed_at = None
-    customer.re_onboarding_allowed_by = None
-    customer.re_onboarding_reason = None
-    db.add(customer)
-    db.add(
-        AuditLog(
-            session_id=latest.id if latest else None,
-            actor_user_id=current_user.id,
-            event_type="re_onboarding_revoked",
-            event_status="success",
-            message="Administrator revoked customer re-onboarding approval.",
-            payload={"customer_user_id": user_id, "reason": payload.reason, "notes": payload.notes},
-        )
-    )
-    await db.commit()
-    await db.refresh(customer)
-    return await _admin_customer_public(customer, db)
-
-
 async def _get_owned_session_or_404(
     *,
     session_id: int,
@@ -579,6 +511,39 @@ async def _get_owned_session_or_404(
     )
     if onboarding_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Onboarding session not found.")
+    return onboarding_session
+
+
+def _raise_onboarding_locked() -> None:
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "ONBOARDING_ALREADY_COMPLETED",
+            "message": "Onboarding is already completed and cannot be changed or restarted.",
+        },
+    )
+
+
+def _is_completed_session(onboarding_session) -> bool:
+    return (
+        onboarding_session.status == "completed"
+        or onboarding_session.workflow_state == "ONBOARDING_COMPLETED"
+    )
+
+
+async def _get_mutable_owned_session_or_404(
+    *,
+    session_id: int,
+    current_user: User,
+    db: AsyncSession,
+):
+    onboarding_session = await _get_owned_session_or_404(
+        session_id=session_id,
+        current_user=current_user,
+        db=db,
+    )
+    if _is_completed_session(onboarding_session):
+        _raise_onboarding_locked()
     return onboarding_session
 
 
@@ -599,7 +564,12 @@ async def resume_session(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    onboarding_session = await _get_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
+    onboarding_session = await _get_mutable_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
+    if onboarding_session.status in TERMINAL_SESSION_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only active onboarding sessions can be resumed.",
+        )
     state = await resolve_session_state_async(db, onboarding_session)
     await transition_session_async(
         db,
@@ -637,7 +607,6 @@ def _validate_identity_submission(payload: CustomerIdentityFormPayload, form_typ
     if form_type == "regular":
         regular = {
             "source_of_funds": payload.source_of_funds,
-            "nationality": payload.nationality,
             "monthly_income": payload.monthly_income,
         }
         for field, value in regular.items():
@@ -647,6 +616,141 @@ def _validate_identity_submission(payload: CustomerIdentityFormPayload, form_typ
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"message": "Identity form validation failed.", "missing_fields": missing},
+        )
+
+
+def _normalized_risk_value(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _configured_value_exists(value: str | None, allowed: set[str]) -> bool:
+    return not str(value or "").strip() or _normalized_risk_value(value) in allowed
+
+
+def _add_allowed_value(mapping: dict[str, str], value: object, canonical: str) -> None:
+    if str(value or "").strip():
+        mapping[_normalized_risk_value(value)] = canonical
+
+
+def _rule_canonical_value(rule: RiskFactorRule) -> str:
+    if rule.rule_type == "boolean":
+        return "true" if rule.boolean_value else "false"
+    return rule.match_value or rule.rule_code
+
+
+def _is_selectable_risk_rule(rule: RiskFactorRule) -> bool:
+    return rule.rule_type in {"normalized_match", "contains", "range"} and rule.rule_type != "fallback"
+
+
+async def _validate_risk_identity_values(
+    payload: CustomerIdentityFormPayload,
+    db: AsyncSession,
+    *,
+    require_all: bool,
+) -> None:
+    version = await _async_active_rule_version(db)
+    missing: list[str] = []
+    invalid: list[str] = []
+    required = {
+        "profession": payload.profession,
+        "product_type": payload.product_type,
+        "business_category": payload.business_category,
+        "residency_status": payload.residency_status,
+        "source_of_funds": payload.source_of_funds,
+        "expected_transaction_range": payload.expected_transaction_range,
+        "onboarding_channel": payload.onboarding_channel,
+    }
+    if require_all:
+        for field, value in required.items():
+            if not str(value or "").strip():
+                missing.append(field)
+
+    professions = list((await db.exec(select(RiskProfessionCategory).where(RiskProfessionCategory.is_active == True))).all())
+    businesses = list((await db.exec(select(RiskBusinessCategory).where(RiskBusinessCategory.is_active == True))).all())
+    products = list(
+        (
+            await db.exec(
+                select(RiskProductCategory)
+                .where(RiskProductCategory.rule_version_id == version.id)
+                .where(RiskProductCategory.is_active == True)
+            )
+        ).all()
+    )
+    definitions = list(
+        (
+            await db.exec(
+                select(RiskFactorDefinition)
+                .where(RiskFactorDefinition.is_active == True)
+            )
+        ).all()
+    )
+    definition_by_id = {definition.id: definition for definition in definitions}
+    rules = list(
+        (
+            await db.exec(
+                select(RiskFactorRule)
+                .where(RiskFactorRule.rule_version_id == version.id)
+                .where(RiskFactorRule.is_active == True)
+            )
+        ).all()
+    )
+    values_by_source: dict[str, dict[str, str]] = {}
+    for rule in rules:
+        definition = definition_by_id.get(rule.factor_definition_id)
+        if definition is None or (
+            definition.source_key in {"source_of_funds", "expected_transaction_range", "onboarding_channel"}
+            and not _is_selectable_risk_rule(rule)
+        ):
+            continue
+        canonical = _rule_canonical_value(rule)
+        source_values = values_by_source.setdefault(definition.source_key, {})
+        _add_allowed_value(source_values, canonical, canonical)
+        _add_allowed_value(source_values, rule.rule_code, canonical)
+        _add_allowed_value(source_values, rule.description, canonical)
+
+    allowed = {
+        "profession": {},
+        "business_category": {},
+        "product_type": {},
+        "residency_status": values_by_source.get("residency_status", {}),
+        "source_of_funds": values_by_source.get("source_of_funds", {}),
+        "expected_transaction_range": values_by_source.get("expected_transaction_range", {}),
+        "onboarding_channel": values_by_source.get("onboarding_channel", {}),
+    }
+    for row in professions:
+        _add_allowed_value(allowed["profession"], row.profession_code, row.profession_code)
+        _add_allowed_value(allowed["profession"], row.profession_name, row.profession_code)
+    for row in businesses:
+        _add_allowed_value(allowed["business_category"], row.category_code, row.category_code)
+        _add_allowed_value(allowed["business_category"], row.category_name, row.category_code)
+    for row in products:
+        _add_allowed_value(allowed["product_type"], row.product_code, row.product_code)
+        _add_allowed_value(allowed["product_type"], row.product_name, row.product_code)
+
+    for field, value in required.items():
+        value_text = str(value or "").strip()
+        if not value_text:
+            continue
+        canonical = allowed.get(field, {}).get(_normalized_risk_value(value_text))
+        if canonical is None:
+            invalid.append(field)
+        else:
+            setattr(payload, field, canonical)
+
+    if payload.beneficial_owner_different:
+        if not str(payload.beneficial_owner_name or "").strip():
+            missing.append("beneficial_owner_name")
+        if not str(payload.beneficial_owner_identification_number or "").strip():
+            missing.append("beneficial_owner_identification_number")
+
+    if missing or invalid:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": "Identity form risk value validation failed.",
+                "missing_fields": sorted(set(missing)),
+                "invalid_fields": sorted(set(invalid)),
+            },
         )
 
 
@@ -672,7 +776,8 @@ async def save_identity_form_draft(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    onboarding_session = await _get_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
+    onboarding_session = await _get_mutable_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
+    await _validate_risk_identity_values(payload, db, require_all=False)
     await crud_onboarding.save_identity_form(
         session_id=session_id,
         payload=payload.model_dump(),
@@ -699,7 +804,8 @@ async def autosave_identity_form(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    onboarding_session = await _get_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
+    onboarding_session = await _get_mutable_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
+    await _validate_risk_identity_values(payload, db, require_all=False)
     await crud_onboarding.save_identity_form(
         session_id=session_id,
         payload=payload.model_dump(),
@@ -726,7 +832,8 @@ async def update_identity_form(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    onboarding_session = await _get_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
+    onboarding_session = await _get_mutable_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
+    await _validate_risk_identity_values(payload, db, require_all=False)
     await crud_onboarding.save_identity_form(
         session_id=session_id,
         payload=payload.model_dump(),
@@ -754,10 +861,32 @@ async def submit_identity_form(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    onboarding_session = await _get_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
+    onboarding_session = await _get_mutable_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
     parsed = _load_payload(CustomerIdentityFormPayload, payload)
     profile = await crud_onboarding.ensure_identity_profile(session_id=session_id, db=db)
-    _validate_identity_submission(parsed, profile.form_type)
+    await _validate_risk_identity_values(parsed, db, require_all=True)
+    preview_payload = await preview_preliminary_assessment_async(
+        db,
+        session_id=session_id,
+        identity_values=parsed.model_dump(),
+    )
+    effective_form_type = str(preview_payload["form_type"])
+    effective_risk_category = str(preview_payload["risk_category"])
+    try:
+        _validate_identity_submission(parsed, effective_form_type)
+    except HTTPException as exc:
+        if (
+            exc.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+            and isinstance(exc.detail, dict)
+        ):
+            exc.detail = {
+                **exc.detail,
+                "effective_form_type": effective_form_type,
+                "effective_risk_category": effective_risk_category,
+                "previous_form_type": profile.form_type,
+                "previous_risk_category": profile.risk_category,
+            }
+        raise
 
     nominee_photo_info = None
     if nominee_photo is not None:
@@ -777,6 +906,26 @@ async def submit_identity_form(
         actor_user_id=current_user.id,
         db=db,
         nominee_photo_info=nominee_photo_info,
+        form_type_override=effective_form_type,
+        risk_category_override=effective_risk_category,
+    )
+    preliminary_assessment, _ = await refresh_preliminary_assessment_async(
+        db,
+        session_id=session_id,
+        actor_user_id=current_user.id,
+    )
+    if profile.risk_category != preliminary_assessment.risk_category:
+        profile.risk_category = preliminary_assessment.risk_category
+        profile.form_type = "simplified" if preliminary_assessment.risk_category == "LOW" else "regular"
+        profile.updated_at = utc_now()
+        db.add(profile)
+    logger.info(
+        "Identity completion refreshed preliminary risk assessment.",
+        extra={
+            "session_id": session_id,
+            "assessment_id": preliminary_assessment.id,
+            "total_score": preliminary_assessment.total_score,
+        },
     )
     screening_request = await crud_compliance.ensure_screening_request(
         session_row=onboarding_session,
@@ -793,8 +942,31 @@ async def submit_identity_form(
         payload={"screening_request_id": screening_request.id},
     )
     await db.commit()
+    queued = enqueue_task(start_screening_workflow, screening_request.id)
+    if not queued:
+        screening_request.status = "SCREENING_FAILED"
+        screening_request.last_error = "Failed to enqueue screening workflow."
+        screening_request.updated_at = utc_now()
+        db.add(screening_request)
+        state = await resolve_session_state_async(db, onboarding_session)
+        await transition_session_async(
+            db,
+            onboarding_session,
+            state["workflow_state"],
+            actor_user_id=current_user.id,
+            event_type="screening_enqueue_failed",
+            message="Compliance screening workflow could not be started.",
+            payload={"screening_request_id": screening_request.id},
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "message": "Compliance screening could not be started. Please retry.",
+                "screening_request_id": screening_request.id,
+            },
+        )
     await db.refresh(onboarding_session)
-    enqueue_task(start_screening_workflow, screening_request.id)
     form = await build_identity_form_response(session_row=onboarding_session, db=db, include_session=True)
     return CustomerIdentitySubmitResponse(
         message="Customer identity form submitted.",
@@ -833,13 +1005,7 @@ async def store_face_verification(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    onboarding_session = await crud_onboarding.get_session_for_user(
-        session_id=session_id,
-        user_id=current_user.id,
-        session=db,
-    )
-    if onboarding_session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Onboarding session not found.")
+    onboarding_session = await _get_mutable_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
 
     parsed = _load_payload(OnboardingFaceVerificationPayload, payload)
 
@@ -908,13 +1074,7 @@ async def store_ocr_extraction(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    onboarding_session = await crud_onboarding.get_session_for_user(
-        session_id=session_id,
-        user_id=current_user.id,
-        session=db,
-    )
-    if onboarding_session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Onboarding session not found.")
+    onboarding_session = await _get_mutable_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
 
     parsed = _load_payload(OnboardingOCRPayload, payload)
 
@@ -944,6 +1104,10 @@ async def store_ocr_extraction(
     if parsed.back:
         back_text = parsed.back.get("combinedText") or parsed.back.get("combined_text") or ""
 
+    stored_fields = dict(parsed.fields)
+    if parsed.fieldMeta:
+        stored_fields["__fieldMeta"] = parsed.fieldMeta
+
     record = await crud_onboarding.upsert_ocr_extraction(
         session_id=session_id,
         db=db,
@@ -955,7 +1119,7 @@ async def store_ocr_extraction(
             "front_text": front_text,
             "back_text": back_text or None,
             "merged_text": parsed.mergedText,
-            "fields": parsed.fields,
+            "fields": stored_fields,
             "front_detection": parsed.frontDetection,
             "back_detection": parsed.backDetection,
             "completed_at": to_naive_utc(
@@ -988,13 +1152,7 @@ async def store_signature_capture(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    onboarding_session = await crud_onboarding.get_session_for_user(
-        session_id=session_id,
-        user_id=current_user.id,
-        session=db,
-    )
-    if onboarding_session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Onboarding session not found.")
+    onboarding_session = await _get_mutable_owned_session_or_404(session_id=session_id, current_user=current_user, db=db)
 
     identity_profile = await crud_onboarding.get_identity_profile(session_id=session_id, db=db)
     if identity_profile is None or identity_profile.status != "IDENTITY_FORM_COMPLETED":

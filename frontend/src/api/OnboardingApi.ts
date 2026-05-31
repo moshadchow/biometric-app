@@ -60,7 +60,6 @@ export interface OnboardingEligibility {
   latest_session?: OnboardingSessionSummary | null;
   can_start_onboarding: boolean;
   can_resume_onboarding: boolean;
-  re_onboarding_allowed: boolean;
   destination: "onboarding" | "customer_dashboard" | "rejected";
   message: string;
 }
@@ -69,10 +68,6 @@ export interface AdminCustomerOnboarding {
   user_id: number;
   username: string;
   role: string;
-  re_onboarding_allowed: boolean;
-  re_onboarding_allowed_at?: string | null;
-  re_onboarding_allowed_by?: number | null;
-  re_onboarding_reason?: string | null;
   latest_session?: OnboardingSessionSummary | null;
 }
 
@@ -197,30 +192,6 @@ export async function listAdminCustomerOnboarding(): Promise<AdminCustomerOnboar
     { headers: authHeaders() }
   );
   return response.data.items;
-}
-
-export async function allowCustomerReOnboarding(
-  userId: number,
-  payload: { reason: string; notes?: string }
-): Promise<AdminCustomerOnboarding> {
-  const response = await api.post<AdminCustomerOnboarding>(
-    `/api/v1/onboarding/admin/customers/${userId}/re-onboarding/allow`,
-    payload,
-    { headers: authHeaders() }
-  );
-  return response.data;
-}
-
-export async function revokeCustomerReOnboarding(
-  userId: number,
-  payload: { reason: string; notes?: string }
-): Promise<AdminCustomerOnboarding> {
-  const response = await api.post<AdminCustomerOnboarding>(
-    `/api/v1/onboarding/admin/customers/${userId}/re-onboarding/revoke`,
-    payload,
-    { headers: authHeaders() }
-  );
-  return response.data;
 }
 
 export async function submitFaceVerification(

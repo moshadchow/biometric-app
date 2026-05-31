@@ -7,7 +7,7 @@ import type {
 } from "@/types";
 import type { NIDExtractorResult } from "@/types";
 import { validateNIDFile } from "@/services/nidFileValidation.service";
-import { detectNIDCard, extractNIDFields, analyzeCardImageQuality } from "@/services/nidValidation.service";
+import { detectNIDCard, extractNIDData, analyzeCardImageQuality } from "@/services/nidValidation.service";
 import { createPreviewUrl } from "@/services/fileValidation.service";
 import { initOCRWorker, terminateOCRWorker, recognizeFile } from "@/services/tesseract.service";
 import { OCR_MERGE_SEPARATOR } from "@/constants/ocr";
@@ -138,7 +138,7 @@ export function useNIDOCR(): UseNIDOCRReturn {
         ? detectNIDCard(backResult.combinedText, "back")
         : undefined;
 
-      const fields = extractNIDFields(
+      const { fields, fieldMeta } = extractNIDData(
         frontResult.combinedText,
         backResult?.combinedText
       );
@@ -153,6 +153,7 @@ export function useNIDOCR(): UseNIDOCRReturn {
         mergedText,
         completedAt: new Date().toISOString(),
         fields,
+        fieldMeta,
         frontDetection,
         backDetection,
       });

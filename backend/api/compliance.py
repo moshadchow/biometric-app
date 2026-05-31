@@ -182,7 +182,20 @@ async def retry_screening(
     screening.updated_at = utc_now()
     db.add(screening)
     await db.commit()
-    enqueue_task(start_screening_workflow, screening.id)
+    queued = enqueue_task(start_screening_workflow, screening.id)
+    if not queued:
+        screening.status = "SCREENING_FAILED"
+        screening.last_error = "Failed to enqueue screening workflow."
+        screening.updated_at = utc_now()
+        db.add(screening)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "message": "Compliance screening retry could not be started. Please retry again.",
+                "screening_request_id": screening.id,
+            },
+        )
     refreshed = await crud_compliance.get_screening_request(screening_id=screening.id, db=db)
     return await _build_screening_status(refreshed, db)
 

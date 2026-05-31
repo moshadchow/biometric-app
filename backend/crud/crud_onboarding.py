@@ -19,7 +19,6 @@ from model.models import (
     OnboardingOCRExtraction,
     OnboardingSession,
     OnboardingSignatureCapture,
-    User,
 )
 from core.onboarding_state import TERMINAL_SESSION_STATUSES
 
@@ -40,6 +39,21 @@ async def get_or_create_active_session(
         text("SELECT pg_advisory_xact_lock(:lock_key)").bindparams(lock_key=user_id)
     )
 
+    latest = await get_latest_session_for_user(user_id=user_id, session=session)
+    if latest and latest.workflow_state == "ONBOARDING_COMPLETED":
+        session.add(
+            AuditLog(
+                session_id=latest.id,
+                actor_user_id=user_id,
+                event_type="completed_onboarding_restart_blocked",
+                event_status="warning",
+                message="Completed customer attempted to restart locked onboarding.",
+                payload={"workflow_state": latest.workflow_state},
+            )
+        )
+        await session.flush()
+        raise PermissionError("ONBOARDING_ALREADY_COMPLETED")
+
     statement = (
         select(OnboardingSession)
         .where(OnboardingSession.user_id == user_id)
@@ -57,24 +71,6 @@ async def get_or_create_active_session(
         )
         return onboarding_session
 
-    latest = await get_latest_session_for_user(user_id=user_id, session=session)
-    if latest and latest.workflow_state == "ONBOARDING_COMPLETED":
-        user_result = await session.exec(select(User).where(User.id == user_id))
-        user = user_result.one_or_none()
-        if user is None or not user.re_onboarding_allowed:
-            session.add(
-                AuditLog(
-                    session_id=latest.id,
-                    actor_user_id=user_id,
-                    event_type="re_onboarding_blocked",
-                    event_status="warning",
-                    message="Completed customer attempted to restart onboarding without admin approval.",
-                    payload={"workflow_state": latest.workflow_state},
-                )
-            )
-            await session.flush()
-            raise PermissionError("ONBOARDING_ALREADY_COMPLETED")
-
     onboarding_session = OnboardingSession(user_id=user_id)
     session.add(onboarding_session)
     try:
@@ -91,25 +87,6 @@ async def get_or_create_active_session(
             )
             return onboarding_session
         raise
-    user_result = await session.exec(select(User).where(User.id == user_id))
-    user = user_result.one_or_none()
-    if user and user.re_onboarding_allowed:
-        previous_reason = user.re_onboarding_reason
-        user.re_onboarding_allowed = False
-        user.re_onboarding_allowed_at = None
-        user.re_onboarding_allowed_by = None
-        user.re_onboarding_reason = None
-        session.add(user)
-        session.add(
-            AuditLog(
-                session_id=onboarding_session.id,
-                actor_user_id=user_id,
-                event_type="re_onboarding_approval_consumed",
-                event_status="success",
-                message="Admin re-onboarding approval consumed by new onboarding session.",
-                payload={"reason": previous_reason},
-            )
-        )
     session.add(
         AuditLog(
             session_id=onboarding_session.id,
@@ -228,6 +205,10 @@ PROFILE_FIELDS = {
     "date_of_birth",
     "gender",
     "profession",
+    "product_type",
+    "business_category",
+    "residency_status",
+    "onboarding_channel",
     "mobile_number",
     "monthly_income",
     "nationality",
@@ -433,10 +414,16 @@ async def save_identity_form(
     actor_user_id: int,
     db: AsyncSession,
     nominee_photo_info: dict[str, Any] | None = None,
+    form_type_override: str | None = None,
+    risk_category_override: str | None = None,
 ) -> CustomerIdentityProfile:
     profile = await ensure_identity_profile(session_id=session_id, db=db)
     for key, value in _profile_payload(payload).items():
         setattr(profile, key, value)
+    if risk_category_override is not None:
+        profile.risk_category = risk_category_override
+    if form_type_override is not None:
+        profile.form_type = form_type_override
     profile.status = status_value
     profile.updated_at = utc_now()
     if status_value == "IDENTITY_FORM_COMPLETED":
